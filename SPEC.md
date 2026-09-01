@@ -68,6 +68,9 @@ Tilting the tower is implemented as rotating the *gravity vector* in tower-local
 (linear by design — do NOT reach for trig here; §5.4 bans it in the sim).
 The renderer rotates the tower mesh (and counter-rotates the camera) by
 `tiltX * maxVisualTiltDeg` for the visual "you are tilting the mountain" effect.
+The visual sign/axis mapping is NOT derivable in advance and does not matter:
+define `visualTiltSignX/Z = 1` in config, run the game, and flip a sign if the
+tower leans the wrong way. Do not investigate engine rotation conventions.
 Sim stays axis-aligned forever: collisions are sphere-vs-AABB and sphere-vs-wall only.
 Vertical geometry: ball radius 40; tier slabs are 700 units apart in Y; a 5-tier tower
 is ~3500 units tall plus the floor. All of it in `config.ts`.

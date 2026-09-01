@@ -6,12 +6,17 @@ Run it: `npm install` · `npm run dev` (served on 0.0.0.0:5173) · `npm test` ·
 
 ## Status
 
-**Built:** project scaffold per `babylon.md` — Vite vanilla-ts, fullscreen `<canvas>`
-in `index.html`, minimal Babylon bootstrap in `src/main.ts` (Engine + empty Scene +
-render loop, no gameplay yet), `@babylonjs/core`/`@babylonjs/loaders` installed,
-`vitest` wired up (`npm test`). Dev server verified: page loads with no console errors.
+**Built:** scaffold + **M0 feel probe** in `src/main.ts` (single file per SPEC §11 M0):
+§3.3 physics with the gravity-tilt trick, pointer-drag tilt, one 8×8 tier (~30 blocks:
+glass/stone + support with 3 dependents), impulse breaking with break-through, staggered
+cascade with shard animation + screen shake, smoothed follow camera, auto-reset on floor
+rest. Headless-verified (real GPU, cascade breaks 4 blocks, tilt steers both ways,
+auto-reset fires, zero console errors).
 
-**Left:** all gameplay — milestones below are not started (SPEC.md §11 is the acceptance source).
+**Left:** owner playtest gate for M0 (tilt feel + avalanche read), then M1+.
+
+**Next:** owner plays at http://localhost:5173 → verdict on feel → M1 (config/rng/sim
+extraction into modules, 5-tier tower, keyboard input, HUD).
 
 ### Milestones (from SPEC.md §11)
 
@@ -26,8 +31,10 @@ render loop, no gameplay yet), `@babylonjs/core`/`@babylonjs/loaders` installed,
 
 - **Babylon 9 has no `exports` map**: import by actual camelCase file paths, e.g.
   `@babylonjs/core/Cameras/arcRotateCamera`, and `Scene` lives at the package root
-  (`@babylonjs/core/scene`). Confirm paths against `node_modules/@babylonjs/core`
-  when unsure — do not guess from older docs.
+  (`@babylonjs/core/scene`). Confirm IMPORT PATHS (and nothing else) against
+  `node_modules/@babylonjs/core` when unsure. Never read Babylon sources to derive
+  behavior, rotation signs, or conventions — resolve those by running the game and
+  flipping a constant if it looks wrong.
 - **npm cache is EPERM in this sandbox**: run installs with
   `npm install --cache /tmp/dsh-npm-cache`.
 - Headless-capture readiness: `src/main.ts` sets a `__DSH_READY` flag on the first
