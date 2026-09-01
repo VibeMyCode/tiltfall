@@ -197,3 +197,60 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   }
   return events;
 }
+
+// Ballistic landing prediction for the aim reticle: the SAME integrator and
+// wall maths as step(), ignoring blocks — shows where the ball is headed on
+// the next tier plane under the current (held) tilt. Render-only consumer;
+// never mutates state.
+export function predictLanding(
+  s: SimState,
+  tiltX: number,
+  tiltZ: number,
+): { x: number; y: number; z: number } | null {
+  const C = CONFIG;
+  let target: number = C.floorY;
+  for (let t = 0; t < C.tierCount; t++) {
+    const planeY = C.firstTierTopY + t * C.tierSpacing + C.blockH;
+    if (planeY - 10 > s.ball.y + C.ballRadius) {
+      target = planeY;
+      break;
+    }
+  }
+  let { x, y, z, vx, vy, vz } = s.ball;
+  for (let i = 0; i < 600; i++) {
+    vx += C.g0 * C.kTilt * tiltX * C.dt;
+    vy += C.g0 * C.dt;
+    vz += C.g0 * C.kTilt * tiltZ * C.dt;
+    vx *= C.drag;
+    vy *= C.drag;
+    vz *= C.drag;
+    const s2 = vx * vx + vy * vy + vz * vz;
+    if (s2 > C.maxSpeed * C.maxSpeed) {
+      const k = C.maxSpeed / Math.sqrt(s2);
+      vx *= k;
+      vy *= k;
+      vz *= k;
+    }
+    x += vx * C.dt;
+    y += vy * C.dt;
+    z += vz * C.dt;
+    if (x < C.ballRadius) {
+      x = C.ballRadius;
+      vx = -vx * C.wallRestitution;
+    }
+    if (x > C.shaftW - C.ballRadius) {
+      x = C.shaftW - C.ballRadius;
+      vx = -vx * C.wallRestitution;
+    }
+    if (z < C.ballRadius) {
+      z = C.ballRadius;
+      vz = -vz * C.wallRestitution;
+    }
+    if (z > C.shaftD - C.ballRadius) {
+      z = C.shaftD - C.ballRadius;
+      vz = -vz * C.wallRestitution;
+    }
+    if (y + C.ballRadius >= target) return { x, y: target, z };
+  }
+  return null;
+}

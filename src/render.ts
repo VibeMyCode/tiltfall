@@ -42,6 +42,7 @@ export interface Renderer {
   frame: (frameMs: number, tilt: { x: number; z: number }) => void;
   consumeHitStop: () => number;
   resetBlocks: () => void;
+  setReticle: (point: { x: number; y: number; z: number } | null) => void;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): Renderer {
@@ -108,8 +109,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   const MATS: Record<BlockType, StandardMaterial> = {
     glass: makeMaterial("mGlass", [0.3, 0.75, 0.95], 0.25, 0.62),
     stone: makeMaterial("mStone", [0.45, 0.47, 0.55], 0.1),
-    support: makeMaterial("mSupport", [1.0, 0.65, 0.15], 0.5),
-    dep: makeMaterial("mDep", [0.75, 0.55, 0.95], 0.3),
+    bomb: makeMaterial("mBomb", [1.0, 0.62, 0.12], 0.7),
   };
   const glassShardMat = makeMaterial("mGlassShard", [0.55, 0.85, 1.0], 0.5, 0.75);
   glassShardMat.backFaceCulling = false;
@@ -146,12 +146,12 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     const iv = e.cascade
       ? { x: 0, y: 260, z: 0 }
       : { x: (e.bvx ?? 0) * inherit, y: -(e.bvy ?? 0) * inherit * 0.7, z: (e.bvz ?? 0) * inherit };
-    const heavy = b.type === "stone";
+    const heavy = b.type !== "glass"; // stone chunks; bombs also burst chunky
     // Bigger segments shed more debris.
     const volumeScale = Math.min(2, (b.hx * b.hz) / (2500 * 1.4));
     const n = Math.round((heavy ? 9 : 12) * Math.max(1, volumeScale));
     for (let i = 0; i < n; i++) {
-      const glassy = !heavy;
+      const glassy = b.type === "glass";
       let m: Mesh;
       let size: number;
       if (glassy) {
@@ -239,6 +239,16 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   const camPos = new Vector3(C.spawn.x, -C.spawn.y + C.camHeight, C.spawn.z + C.camDist);
   const camAim = new Vector3(C.spawn.x, -C.spawn.y, C.spawn.z);
 
+  // Landing reticle: where the ball is headed on the next tier (aim aid).
+  const reticle = MeshBuilder.CreateDisc("reticle", { radius: 46, tessellation: 32 }, scene);
+  const reticleMat = makeMaterial("mReticle", [0.4, 1.0, 0.75], 1);
+  reticleMat.alpha = 0.75;
+  reticle.material = reticleMat;
+  reticle.rotation.x = Math.PI / 2;
+  reticle.parent = tower;
+  reticle.setEnabled(false);
+  let reticlePhase = 0;
+
   return {
     engine,
     scene,
@@ -264,6 +274,14 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     },
     resetBlocks() {
       for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
+    },
+    setReticle(point) {
+      if (!point) {
+        reticle.setEnabled(false);
+        return;
+      }
+      reticle.setEnabled(true);
+      reticle.position = toLocal(point.x, point.y - 60, point.z);
     },
     frame(frameMs, tilt) {
       updateEffects(frameMs / 1000);
@@ -296,11 +314,17 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       camPos.x += (gx - camPos.x) * C.camSmooth;
       camPos.y += (gy - camPos.y) * C.camSmooth;
       camPos.z += (gz - camPos.z) * C.camSmooth;
+      // Look AHEAD of the fall (below the ball) — the next tier is the star.
+      const aimY = p.y - C.camAimAheadY;
       camAim.x += (p.x - camAim.x) * C.camSmooth;
-      camAim.y += (p.y - camAim.y) * C.camSmooth;
+      camAim.y += (aimY - camAim.y) * C.camSmooth;
       camAim.z += (p.z - camAim.z) * C.camSmooth;
       camera.position.set(camPos.x, camPos.y, camPos.z);
       camera.setTarget(camAim);
+      // Reticle breathes.
+      reticlePhase += frameMs / 320;
+      const pulse = 1 + 0.14 * ((reticlePhase % 2 < 1 ? reticlePhase % 1 : 1 - (reticlePhase % 1)) - 0.5);
+      reticle.scaling.setAll(pulse);
     },
   };
 }

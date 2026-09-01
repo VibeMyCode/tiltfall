@@ -6,16 +6,16 @@ export const CONFIG = {
   ballRadius: 40,
 
   // Tower shape. Air between tiers is a GAMEPLAY feature (owner feedback):
-  // the fall between tiers is where you see the ball and aim by tilting.
+  // the long fall is where you see the next tier, aim, and prepare.
   tierCount: 5,
-  firstTierTopY: 1000,
-  tierSpacing: 1150,
-  floorY: 6900,
+  firstTierTopY: 1200,
+  tierSpacing: 2000,
+  floorY: 11400,
   spawn: { x: 650, y: 140, z: 650 },
   cell: 100,
   gridN: 8,
   gridX0: 200,
-  blockH: 100, // base piece height; levelgen also uses 60 (slab) and 150 (tall)
+  blockH: 50, // tallest piece height; levelgen uses 20 (flat) / 40 / 50 (owner)
 
   // Physics (§3.3) — fixed timestep, semi-implicit Euler.
   dt: 1 / 120,
@@ -33,11 +33,13 @@ export const CONFIG = {
   ballMass: 1,
   impulseScale: 96,
   breakThroughLoss: 0.62,
-  thresholds: { glass: 8, stone: 22, support: 8, dep: 8 } as Record<string, number>,
-  points: { glass: 10, stone: 25, support: 20, dep: 10 } as Record<string, number>,
+  thresholds: { glass: 8, stone: 22, bomb: 8 } as Record<string, number>,
+  points: { glass: 10, stone: 25, bomb: 30 } as Record<string, number>,
 
-  // Cascade (§4.2).
-  cascadeStepTicks: 12,
+  // Cascade (§4.2): a BOMB (yellow) breaks every piece whose center is within
+  // blastRadius, rippling outward with the step delay.
+  cascadeStepTicks: 10,
+  blastRadius: 240,
 
   // Combo & scoring (§3.5). Window/timer are in ticks.
   comboWindowTicks: 300, // 2.5 s
@@ -52,10 +54,14 @@ export const CONFIG = {
   tiltReleaseEaseMs: 250,
   keyTiltRate: 5.5, // tilt units per second toward keyboard target
 
-  // Visual tilt (§2) — renderer only; signs are set by LOOKING (SPEC §2).
+  // Visual presentation of steering. 0 = direct "air control" look (owner
+  // pick: the world stays still, you steer the falling ball; the landing
+  // reticle shows where you are headed). Set > 0 to bring back the
+  // tilt-the-tower look for comparison.
   visualTiltSignX: 1,
   visualTiltSignZ: 1,
-  maxVisualTiltDeg: 8,
+  maxVisualTiltDeg: 0,
+  camAimAheadY: 380, // camera looks this far BELOW the ball — see what's coming
 
   // Camera.
   camHeight: 1500,
@@ -72,6 +78,6 @@ export const CONFIG = {
 
   // Fog scales with the camera zoom (portrait/tilt) so zooming out never
   // drowns the tower (owner feedback).
-  fogStart: 2000,
-  fogEnd: 7600,
+  fogStart: 2200,
+  fogEnd: 9000,
 } as const;

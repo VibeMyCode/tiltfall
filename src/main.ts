@@ -3,7 +3,7 @@
 import "./style.css";
 import { CONFIG } from "./config";
 import { buildTower } from "./levelgen";
-import { createSim, step, type SimState } from "./sim";
+import { createSim, predictLanding, step, type SimState } from "./sim";
 import { attachInput } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
@@ -53,7 +53,9 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   }
 
   renderer.syncBall(sim.ball);
-  renderer.frame(frameMs, input.current(nowMs));
+  const tiltNow = input.current(nowMs);
+  renderer.setReticle(sim.finished ? null : predictLanding(sim, tiltNow.x, tiltNow.z));
+  renderer.frame(frameMs, tiltNow);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;
 });

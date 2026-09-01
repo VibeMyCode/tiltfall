@@ -5,7 +5,7 @@
 import { CONFIG } from "./config";
 import { stream } from "./rng";
 
-export type BlockType = "glass" | "stone" | "support" | "dep";
+export type BlockType = "glass" | "stone" | "bomb";
 
 // One axis-aligned segment of a piece. Ascending id = §3.3 contact order.
 export interface BlockDef {
@@ -21,7 +21,7 @@ export interface BlockDef {
   hy: number;
   hz: number;
   threshold: number;
-  deps: number[]; // support pieces: groupIds broken by the cascade
+  deps: number[]; // bombs: groupIds within blastRadius, near-to-far (the ripple)
 }
 
 // Piece templates as cell rectangles [r0, c0, rows, cols] — an L is a bar +
@@ -34,7 +34,7 @@ const SHAPES: { rects: number[][]; cells: number }[] = [
   { rects: [[0, 0, 2, 1], [1, 1, 1, 1]], cells: 3 }, // L
   { rects: [[0, 0, 1, 3], [1, 0, 1, 1], [1, 2, 1, 1]], cells: 5 }, // П
 ];
-const HEIGHTS = [60, 100, 150];
+const HEIGHTS = [20, 40, 50]; // flat plate / normal / tall (owner sizing)
 
 export function buildTower(seed: number): BlockDef[] {
   const C = CONFIG;
@@ -84,31 +84,29 @@ export function buildTower(seed: number): BlockDef[] {
       });
     };
 
-    // 1. Support cluster first (guaranteed): support + up to 3 single-cell
-    // dependents. Tier 0 sits under the spawn for the first-drop cascade.
+    // 1. The BOMB (guaranteed, one per tier): tier 0 sits under the spawn so
+    // the first drop always detonates. Its blast targets are computed after
+    // the whole tier is placed (step 4). Three glass singles are forced
+    // around tier-0's bomb so the opening blast always has fuel.
     const sr = tier === 0 ? 4 : 2 + Math.floor(rng() * 4);
     const sc = tier === 0 ? 4 : 2 + Math.floor(rng() * 4);
-    const depOffsets = [
-      [0, 1],
-      [1, 0],
-      [1, 1],
-    ];
-    const depGroupIds: number[] = [];
-    const supportGroup = nextGroup++;
+    const bombGroup = nextGroup++;
+    const bombSegIndex = out.length; // patched with deps in step 4
     claim(sr, sc, 1, 1);
-    const depDefs: { r: number; c: number; g: number }[] = [];
-    for (const [dr, dc] of depOffsets) {
-      const r = sr + dr;
-      const c = sc + dc;
-      if (free(r, c, 1, 1)) {
-        const g = nextGroup++;
-        depGroupIds.push(g);
-        depDefs.push({ r, c, g });
-        claim(r, c, 1, 1);
+    segment(bombGroup, "bomb", true, 1, sr, sc, 1, 1, 50, []);
+    if (tier === 0) {
+      for (const [dr, dc] of [
+        [0, 1],
+        [1, 0],
+        [1, 1],
+      ]) {
+        if (free(sr + dr, sc + dc, 1, 1)) {
+          const g = nextGroup++;
+          claim(sr + dr, sc + dc, 1, 1);
+          segment(g, "glass", true, 1, sr + dr, sc + dc, 1, 1, 40, []);
+        }
       }
     }
-    segment(supportGroup, "support", true, 1, sr, sc, 1, 1, 100, depGroupIds);
-    for (const d of depDefs) segment(d.g, "dep", true, 1, d.r, d.c, 1, 1, 100, []);
 
     // 2. Big pieces: one 2×2 or П, two bars, one L — placed by rejection
     // sampling (bounded attempts, deterministic draws).
@@ -144,6 +142,24 @@ export function buildTower(seed: number): BlockDef[] {
         segment(g, type, true, 1, r, c, 1, 1, h, []);
       }
     }
+
+    // 4. Arm the bomb: every OTHER group on this tier whose nearest segment
+    // center is within blastRadius, ordered near-to-far (the ripple).
+    const bombSeg = out[bombSegIndex];
+    const tierSegs = out.filter((b) => b.groupId >= tier * 1000 && b.groupId < (tier + 1) * 1000);
+    const groupDist = new Map<number, number>();
+    for (const b of tierSegs) {
+      if (b.groupId === bombGroup) continue;
+      const dx = b.cx - bombSeg.cx;
+      const dz = b.cz - bombSeg.cz;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      const prev = groupDist.get(b.groupId);
+      if (prev === undefined || d < prev) groupDist.set(b.groupId, d);
+    }
+    bombSeg.deps = [...groupDist.entries()]
+      .filter(([, d]) => d <= C.blastRadius)
+      .sort((a, b) => a[1] - b[1] || a[0] - b[0])
+      .map(([g]) => g);
   }
   return out;
 }
