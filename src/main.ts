@@ -334,6 +334,18 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   replay() {
     newRun();
   },
+  // Wipe all saved progress (bank, boosters, level, skins, best, daily) and
+  // start clean — testing helper: run `__tf.reset()` in the console.
+  reset() {
+    for (const k of ["tf.bank", "tf.inv", "tf.best", "tf.level", "tf.skin", "tf.daily"]) {
+      try {
+        localStorage.removeItem(k);
+      } catch {
+        // storage unavailable — nothing to wipe
+      }
+    }
+    location.reload();
+  },
 };
 
 renderer.engine.runRenderLoop(() => renderer.scene.render());
