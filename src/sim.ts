@@ -1,27 +1,38 @@
 // Pure simulation (§3.3, §4.2, §5.4): zero Babylon imports, no Math.random,
-// no Date, no transcendentals. Same layout + same input log + same booster
-// activations ⇒ same run. No mid-run interruptions (owner: gates removed).
+// no Date, no transcendentals. ENDLESS tower streamed from the run seed;
+// the run ends only on a MINE (owner design). Same seed + same input log +
+// same booster/jump activations ⇒ same run.
 import { CONFIG } from "./config";
 import { BOOSTER_MODE, type BoosterId } from "./boosters";
-import type { BlockDef } from "./levelgen";
+import { buildTier, type BlockDef } from "./levelgen";
 
 export interface SimBlock extends BlockDef {
   broken: boolean;
 }
 
 export interface SimEvent {
-  kind: "break" | "finish" | "bumper" | "spike" | "pity";
+  kind: "break" | "finish" | "bumper" | "spike" | "pity" | "mine" | "shield" | "jump";
   id?: number;
+  btype?: string; // block type on break events (daily-task tracking)
   cascade?: boolean;
   bvx?: number;
   bvy?: number;
   bvz?: number;
 }
 
+export interface SimOpts {
+  jumpPower?: number;
+  jumpCooldownTicks?: number;
+  shields?: number;
+  pityDisabled?: boolean;
+}
+
 export interface SimState {
+  seed: number;
   tick: number;
   ball: { x: number; y: number; z: number; vx: number; vy: number; vz: number };
   blocks: SimBlock[];
+  tiersBuilt: number;
   groupDamage: Record<number, number>;
   queue: { tick: number; groupId: number }[];
   combo: number;
@@ -30,21 +41,28 @@ export interface SimState {
   lastBreakTick: number;
   score: number;
   broken: number;
+  depth: number; // deepest tier reached — the endless badge
   finished: boolean;
   finishTick: number;
-  armed: Partial<Record<BoosterId, boolean>>; // one-shot boosters, waiting to fire
-  runOn: Partial<Record<BoosterId, boolean>>; // run-long boosters (x2, feather)
-  chainBlastTick: number; // last chain-bomb consumption (drives the slow-mo showcase)
+  armed: Partial<Record<BoosterId, boolean>>;
+  runOn: Partial<Record<BoosterId, boolean>>;
+  chainBlastTick: number;
+  jumpPower: number;
+  jumpCooldownTicks: number;
+  jumpCd: number;
+  shields: number;
   tierEnterTick: number;
   currentTier: number;
   pityDisabled: boolean;
 }
 
-export function createSim(layout: BlockDef[], opts?: { pityDisabled?: boolean }): SimState {
-  return {
+export function createSim(seed: number, opts?: SimOpts): SimState {
+  const s: SimState = {
+    seed,
     tick: 0,
     ball: { x: CONFIG.spawn.x, y: CONFIG.spawn.y, z: CONFIG.spawn.z, vx: 0, vy: 0, vz: 0 },
-    blocks: layout.map((b) => ({ ...b, broken: false })),
+    blocks: [],
+    tiersBuilt: 0,
     groupDamage: {},
     queue: [],
     combo: 1,
@@ -53,29 +71,50 @@ export function createSim(layout: BlockDef[], opts?: { pityDisabled?: boolean })
     lastBreakTick: -1e9,
     score: 0,
     broken: 0,
+    depth: 0,
     finished: false,
     finishTick: 0,
     armed: {},
     runOn: {},
     chainBlastTick: -1e9,
+    jumpPower: opts?.jumpPower ?? CONFIG.jumpBasePower,
+    jumpCooldownTicks: opts?.jumpCooldownTicks ?? CONFIG.jumpBaseCooldownTicks,
+    jumpCd: 0,
+    shields: opts?.shields ?? 0,
     tierEnterTick: 0,
     currentTier: 0,
     pityDisabled: opts?.pityDisabled ?? false,
   };
+  ensureTiers(s);
+  return s;
 }
 
-// Activate an owned booster (main handles inventory; replay logs (tick, id)).
-// Impact boosters ARM (fire once on the next matching hit); x2/feather stay
-// on until the run ends.
+// Stream tiers ahead of the fall — the tower never ends.
+function ensureTiers(s: SimState): void {
+  const C = CONFIG;
+  const need =
+    Math.max(0, Math.floor((s.ball.y + C.tierAttributionBias - C.firstTierTopY) / C.tierSpacing)) + C.tierLookahead;
+  while (s.tiersBuilt <= need) {
+    for (const b of buildTier(s.seed, s.tiersBuilt)) s.blocks.push({ ...b, broken: false });
+    s.tiersBuilt++;
+  }
+}
+
 export function activateBooster(s: SimState, id: BoosterId): void {
   if (BOOSTER_MODE[id] === "armed") s.armed[id] = true;
   else s.runOn[id] = true;
 }
 
+// JUMP (owner design): Space / button; leveling raises power, cuts cooldown.
+export function jump(s: SimState): boolean {
+  if (s.finished || s.jumpCd > 0) return false;
+  s.ball.vy = -s.jumpPower;
+  s.jumpCd = s.jumpCooldownTicks;
+  return true;
+}
+
 const tierBaseY = (tier: number): number => CONFIG.firstTierTopY + tier * CONFIG.tierSpacing + CONFIG.blockH;
 
-// Queue every un-broken group whose nearest segment center (XZ, same tier
-// band) lies within radius — near-to-far ripple, deterministic total order.
 function queueBlast(s: SimState, cx: number, cy: number, cz: number, radius: number, delayStep: number): void {
   const dist = new Map<number, number>();
   for (const b of s.blocks) {
@@ -100,7 +139,7 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
     if (b.groupId !== groupId || b.broken) continue;
     b.broken = true;
     any = true;
-    events.push({ kind: "break", id: b.id, cascade, bvx: s.ball.vx, bvy: s.ball.vy, bvz: s.ball.vz });
+    events.push({ kind: "break", id: b.id, btype: b.type, cascade, bvx: s.ball.vx, bvy: s.ball.vy, bvz: s.ball.vz });
     if (b.primary) {
       if (s.tick - s.lastBreakTick <= CONFIG.comboWindowTicks) {
         s.combo = Math.min(CONFIG.comboMax, s.combo + 1);
@@ -114,7 +153,6 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
       const scoreMul = s.runOn.x2 ? B.x2.scoreMul : 1;
       s.score += (CONFIG.points[b.type] ?? 0) * b.cells * s.combo * scoreMul;
       if (b.type === "bomb") {
-        // CHAIN BOMB (one-shot): this bomb mega-chains, in slow motion.
         const mul = s.armed.chain ? B.chain.blastMul : 1;
         if (s.armed.chain) {
           s.armed.chain = false;
@@ -123,7 +161,6 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
         queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * mul, CONFIG.cascadeStepTicks);
       }
       if (!cascade && s.armed.quake) {
-        // QUAKE (one-shot): this smash levels a huge area.
         s.armed.quake = false;
         queueBlast(s, b.cx, b.cy, b.cz, B.quake.blastCells * CONFIG.cell, 6);
       }
@@ -157,16 +194,31 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
     const pz = hz - Math.abs(dz);
     const axis: "x" | "y" | "z" = px <= py && px <= pz ? "x" : py <= pz ? "y" : "z";
     const vAxis = axis === "x" ? ball.vx : axis === "y" ? ball.vy : ball.vz;
+
+    if (b.type === "mine") {
+      b.broken = true;
+      if (s.shields > 0) {
+        // Mine shield (level perk): the mine dies instead of you.
+        s.shields--;
+        ball.vy = -900;
+        events.push({ kind: "shield", id: b.id });
+      } else {
+        events.push({ kind: "mine", id: b.id });
+        s.finished = true;
+        s.finishTick = s.tick;
+        events.push({ kind: "finish" });
+      }
+      continue;
+    }
+
     const j = Math.round((Math.abs(vAxis) * CONFIG.ballMass) / CONFIG.impulseScale);
     const dmg = (s.groupDamage[b.groupId] ?? 0) + j;
     const breakable = b.threshold !== Infinity;
-    // HEAVY (one-shot): the next hit breaks ANY breakable piece instantly.
     const heavySmash = breakable && s.armed.heavy;
     if (breakable && (dmg >= b.threshold || heavySmash)) {
       if (heavySmash) s.armed.heavy = false;
       breakGroup(s, b.groupId, false, events);
       if (axis === "y" && vAxis > 0) {
-        // BOUNCE (one-shot): this smash launches you up like a bumper.
         if (s.armed.bounce) {
           s.armed.bounce = false;
           ball.vy = -CONFIG.bumperMinLaunch;
@@ -180,8 +232,6 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
     }
     if (breakable) s.groupDamage[b.groupId] = dmg;
     if (b.type === "spike") {
-      // Impale ONCE on a fast hit (dead stop, combo dies); afterwards the
-      // ball may slowly roll off under tilt — never a permanent trap.
       if (axis === "x") ball.x = b.cx + Math.sign(dx) * hx;
       else if (axis === "y") ball.y = b.cy + Math.sign(dy) * hy;
       else ball.z = b.cz + Math.sign(dz) * hz;
@@ -193,7 +243,6 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
         s.comboChain = 0;
         events.push({ kind: "spike", id: b.id });
       } else {
-        // resting on the spikes: soft contact, tilt can drag the ball off
         if (axis === "x") ball.vx = -ball.vx * 0.1;
         else if (axis === "y") ball.vy = -ball.vy * 0.1;
         else ball.vz = -ball.vz * 0.1;
@@ -218,7 +267,6 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
       ball.vy *= CONFIG.friction;
     }
     if (b.type === "bumper") {
-      // A launcher must LAUNCH (owner): guarantee a violent exit speed.
       if (axis === "x") ball.vx = Math.sign(ball.vx) * Math.max(Math.abs(ball.vx), CONFIG.bumperMinLaunch);
       else if (axis === "y") ball.vy = Math.sign(ball.vy) * Math.max(Math.abs(ball.vy), CONFIG.bumperMinLaunch);
       else ball.vz = Math.sign(ball.vz) * Math.max(Math.abs(ball.vz), CONFIG.bumperMinLaunch);
@@ -228,18 +276,13 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
   }
 }
 
-// Pity only (§3.2, owner-tuned): no nudging — a tier that holds the ball
-// for pityTicks auto-shatters, spectacularly.
+// Pity: a tier that holds the ball too long auto-shatters (mines survive).
 function pity(s: SimState, events: SimEvent[]): void {
   const C = CONFIG;
-  // Bias DOWN so a ball resting ON a tier's blocks is attributed to THAT
-  // tier (owner bug report: pity was shattering the tier above).
-  const tier = Math.max(
-    0,
-    Math.min(C.tierCount - 1, Math.floor((s.ball.y + C.tierAttributionBias - C.firstTierTopY) / C.tierSpacing)),
-  );
+  const tier = Math.max(0, Math.floor((s.ball.y + C.tierAttributionBias - C.firstTierTopY) / C.tierSpacing));
   if (tier !== s.currentTier) {
     s.currentTier = tier;
+    s.depth = Math.max(s.depth, tier);
     s.tierEnterTick = s.tick;
   }
   if (!s.pityDisabled && s.tick - s.tierEnterTick > C.pityTicks) {
@@ -257,6 +300,8 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   const events: SimEvent[] = [];
   if (s.finished) return events;
   s.tick++;
+  if (s.jumpCd > 0) s.jumpCd--;
+  ensureTiers(s);
   const { ball } = s;
   const C = CONFIG;
   const kTiltMul = s.runOn.feather ? C.boosters.feather.tiltMul : 1;
@@ -277,13 +322,8 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   ball.y += ball.vy * C.dt;
   ball.z += ball.vz * C.dt;
 
-  // Fixed contact order (§5.4): floor → walls W0..W3 → blocks by id.
-  if (ball.y + C.ballRadius > C.floorY) {
-    ball.y = C.floorY - C.ballRadius;
-    if (ball.vy > 0) ball.vy = -ball.vy * C.floorRestitution;
-    ball.vx *= C.friction;
-    ball.vz *= C.friction;
-  }
+  // Fixed contact order (§5.4): walls W0..W3 → blocks by id. No floor —
+  // the tower is endless; only a mine ends the run.
   if (ball.x < C.ballRadius) {
     ball.x = C.ballRadius;
     if (ball.vx < 0) ball.vx = -ball.vx * C.wallRestitution;
@@ -303,29 +343,24 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   resolveBlocks(s, events);
   processQueue(s, events);
   pity(s, events);
-
-  // The run ends the moment the ball reaches the floor (§3.2).
-  if (ball.y + C.ballRadius >= C.floorY - 1) {
-    s.finished = true;
-    s.finishTick = s.tick;
-    events.push({ kind: "finish" });
-  }
   return events;
 }
 
-// Aim trajectory: the SAME integrator and wall maths as step(), ignoring
-// breakables except as landing surfaces. Hard wall contact CUTS the line;
-// the LAST point is the landing spot. Render-only consumer.
+// Aim trajectory: SAME integrator/walls as step(), ignoring breakables
+// except as landing surfaces. Hard wall contact cuts the line. `landed`
+// says whether the last point is a real surface (mines are surfaces too —
+// the thread warns you what you are falling onto).
 export function predictPath(
   s: SimState,
   tiltX: number,
   tiltZ: number,
-): { points: { x: number; y: number; z: number }[]; wallHit: boolean } {
+): { points: { x: number; y: number; z: number }[]; wallHit: boolean; landed: boolean } {
   const C = CONFIG;
   const WALL_CUT_SPEED = 150;
   const kTiltMul = s.runOn.feather ? C.boosters.feather.tiltMul : 1;
   const pts: { x: number; y: number; z: number }[] = [];
   let wallHit = false;
+  let landed = false;
   let { x, y, z, vx, vy, vz } = s.ball;
   outer: for (let i = 0; i < 900; i++) {
     vx += C.g0 * C.kTilt * kTiltMul * tiltX * C.dt;
@@ -361,11 +396,6 @@ export function predictPath(
       resolve();
     }
     if (i % 5 === 0) pts.push({ x, y, z });
-    if (y + C.ballRadius >= C.floorY) {
-      pts.push({ x, y: C.floorY, z });
-      break;
-    }
-    let landed = false;
     for (const blk of s.blocks) {
       if (blk.broken) continue;
       const top = blk.cy - blk.hy;
@@ -374,10 +404,9 @@ export function predictPath(
       if (Math.abs(x - blk.cx) <= blk.hx && Math.abs(z - blk.cz) <= blk.hz) {
         pts.push({ x, y: top, z });
         landed = true;
-        break;
+        break outer;
       }
     }
-    if (landed) break;
   }
-  return { points: pts, wallHit };
+  return { points: pts, wallHit, landed };
 }

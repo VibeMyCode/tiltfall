@@ -5,13 +5,18 @@ export const CONFIG = {
   shaftD: 1200,
   ballRadius: 40,
 
-  // Tower shape. Air between tiers is a GAMEPLAY feature (owner feedback):
-  // the long fall is where you see the next tier, aim, and prepare.
-  tierCount: 8, // a run should be a real descent, not a 10-second drop (owner)
+  // Tower shape. ENDLESS (owner design): tiers stream forever, every run on a
+  // fresh random seed; the run ends only on a MINE. Depth is the badge.
   firstTierTopY: 1200,
   tierSpacing: 2400,
-  floorY: 20400,
   spawn: { x: 650, y: 140, z: 650 },
+  tierLookahead: 3, // generate this many tiers below the ball
+  // Mines: none on the first tiers, then the tower turns hostile with depth.
+  mineFreeTiers: 3,
+  mineCount: (tier: number) => Math.min(4, 1 + Math.floor((tier - 3) / 3)),
+  // Difficulty ramp caps.
+  stonePMax: 0.5,
+  spikeMaxPerTier: 3,
   cell: 100,
   gridN: 8,
   gridX0: 200,
@@ -57,6 +62,23 @@ export const CONFIG = {
     feather: { price: 1200, tiltMul: 1.8 }, // rest of the run
   },
   slowMoScale: 0.35, // playback speed while a chain-bomb cascade showcases
+
+  // JUMP (owner design): Space / on-screen button; the ball hops up with a
+  // cooldown. Player LEVELS (bought with banked score) raise the jump and
+  // shrink the cooldown; even levels unlock skins; L5/L10 grant mine shields.
+  jumpBasePower: 1000,
+  jumpPowerPerLevel: 90,
+  jumpBaseCooldownTicks: 480,
+  jumpCooldownPerLevel: 25,
+  jumpMinCooldownTicks: 180,
+  levelBaseCost: 4000,
+  levelCostGrowth: 1.55,
+  skinUnlocks: { 1: "core", 2: "ember", 4: "prism", 6: "galaxy", 8: "aurora" } as Record<number, string>,
+  shieldLevels: [5, 10],
+
+  // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
+  dailyRewardEach: 800,
+  dailyRewardAll: 1500,
 
   // Unbreakables (§4.1). Bumpers must FEEL like launchers; spikes stop the
   // ball dead (owner).

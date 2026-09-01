@@ -1,20 +1,31 @@
-// Boot + fixed-timestep game loop (§2 override of babylon.md's frame-delta
-// guidance): gameplay advances ONLY through sim.step. No mid-run stops —
-// boosters are bought in the post-run shop and activated on demand (owner).
+// Boot + fixed-timestep game loop. ENDLESS random tower each run; the run
+// ends on a mine. Bank → levels (jump power/cooldown, skins, mine shields),
+// boosters, daily tasks (owner design M3+M4).
 import "./style.css";
 import { CONFIG } from "./config";
 import { BOOSTER_ORDER, type BoosterId } from "./boosters";
-import { buildTower } from "./levelgen";
-import { activateBooster, createSim, predictPath, step, type SimState } from "./sim";
+import {
+  freshDaily,
+  jumpCooldownAt,
+  jumpPowerAt,
+  levelCost,
+  rollDaily,
+  shieldsAt,
+  skinsAt,
+  trackBoosterUse,
+  trackEvents,
+  trackRunEnd,
+  type DailyProgress,
+} from "./meta";
+import { activateBooster, createSim, jump, predictPath, step, type SimState } from "./sim";
 import { attachInput } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
 
-const M1_SEED = 20260901;
 const DT_MS = 1000 * CONFIG.dt;
 const MAX_FRAME_MS = 100;
 
-// --- Persistence (bank, booster inventory, best) ---------------------------
+// --- Persistence -----------------------------------------------------------
 function load<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem(key);
@@ -32,48 +43,75 @@ function save(key: string, value: unknown): void {
 }
 let bank = load<number>("tf.bank", 0);
 let inventory = load<Record<BoosterId, number>>("tf.inv", { quake: 0, chain: 0, x2: 0, heavy: 0, bounce: 0, feather: 0 });
-let best = load<{ score: number; combo: number }>("tf.best", { score: 0, combo: 1 });
-let banked = false; // guards double-banking a finished run
+let best = load<{ score: number; depth: number }>("tf.best", { score: 0, depth: 0 });
+let level = load<number>("tf.level", 1);
+let skin = load<string>("tf.skin", "core");
+const todayStr = new Date().toISOString().slice(0, 10); // UTC date, outside the sim
+let daily = load<DailyProgress>("tf.daily", freshDaily(todayStr));
+if (daily.date !== todayStr) daily = freshDaily(todayStr);
+const dailyTasks = rollDaily(todayStr);
+let banked = false;
+
+const simOpts = () => ({
+  jumpPower: jumpPowerAt(level),
+  jumpCooldownTicks: jumpCooldownAt(level),
+  shields: shieldsAt(level),
+});
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
-const layout = buildTower(M1_SEED);
-let sim: SimState = createSim(layout);
+// Every run is a NEW random tower (owner: generative all the way). The seed
+// itself is drawn outside the sim — the sim stays deterministic per seed.
+let sim: SimState = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
 const input = attachInput(canvas);
-const renderer = createRenderer(canvas, layout);
+const renderer = createRenderer(canvas, sim.blocks);
+renderer.setSkin(skin);
 
 const newRun = () => {
-  sim = createSim(layout);
+  sim = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
   banked = false;
-  renderer.resetBlocks();
+  renderer.setLayout(sim.blocks);
   ui.hideResults();
 };
 
 function tryActivate(id: BoosterId): void {
   if (sim.finished) return;
-  if (sim.armed[id] || sim.runOn[id]) return; // already armed / running
+  if (sim.armed[id] || sim.runOn[id]) return;
   if ((inventory[id] ?? 0) <= 0) return;
   inventory[id]--;
   save("tf.inv", inventory);
   activateBooster(sim, id);
+  trackBoosterUse(daily);
+  save("tf.daily", daily);
 }
 
-const ui = createUI(newRun, { get: () => input.invertY(), toggle: () => input.toggleInvertY() }, tryActivate);
+function tryJump(): void {
+  if (jump(sim)) renderer.jumpFx(sim.ball);
+}
+
+const ui = createUI({
+  onReplay: newRun,
+  invert: { get: () => input.invertY(), toggle: () => input.toggleInvertY() },
+  onActivate: tryActivate,
+  onJump: tryJump,
+});
 
 function onFinish(): void {
   if (banked) return;
   banked = true;
   bank += sim.score;
-  const newBest = sim.score > best.score || sim.maxCombo > best.combo;
-  best = { score: Math.max(best.score, sim.score), combo: Math.max(best.combo, sim.maxCombo) };
+  trackRunEnd(daily, sim.score);
+  save("tf.daily", daily);
+  const newBest = sim.score > best.score || sim.depth > best.depth;
+  best = { score: Math.max(best.score, sim.score), depth: Math.max(best.depth, sim.depth) };
   save("tf.bank", bank);
   save("tf.best", best);
   ui.showResults({
-    timeS: sim.finishTick * CONFIG.dt,
     score: sim.score,
+    depth: sim.depth,
     broken: sim.broken,
     maxCombo: sim.maxCombo,
     bestScore: best.score,
-    bestCombo: best.combo,
+    bestDepth: best.depth,
     newBest,
     shop: {
       get bank() {
@@ -89,6 +127,52 @@ function onFinish(): void {
         save("tf.inv", inventory);
       },
     },
+    level: {
+      level,
+      cost: levelCost(level),
+      jumpPower: jumpPowerAt(level),
+      jumpCdS: jumpCooldownAt(level) * CONFIG.dt,
+      shields: shieldsAt(level),
+      buy: () => {
+        const cost = levelCost(level);
+        if (bank < cost) return false;
+        bank -= cost;
+        level++;
+        save("tf.bank", bank);
+        save("tf.level", level);
+        return true;
+      },
+    },
+    skins: {
+      unlocked: skinsAt(level),
+      current: skin,
+      select: (id) => {
+        if (!skinsAt(level).includes(id)) return;
+        skin = id;
+        save("tf.skin", skin);
+        renderer.setSkin(skin);
+      },
+    },
+    daily: {
+      tasks: dailyTasks.map((t) => ({
+        ...t,
+        progress: daily.progress[t.id] ?? 0,
+        claimed: daily.claimed[t.id] ?? false,
+      })),
+      claim: (id) => {
+        const task = dailyTasks.find((t) => t.id === id);
+        if (!task || daily.claimed[id]) return;
+        if ((daily.progress[id] ?? 0) < task.goal) return;
+        daily.claimed[id] = true;
+        bank += CONFIG.dailyRewardEach;
+        if (dailyTasks.every((t) => daily.claimed[t.id]) && !daily.allClaimed) {
+          daily.allClaimed = true;
+          bank += CONFIG.dailyRewardAll;
+        }
+        save("tf.daily", daily);
+        save("tf.bank", bank);
+      },
+    },
   });
 }
 
@@ -102,8 +186,6 @@ let dragAnchor: { x: number; z: number } | null = null;
 const clampT = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
 const clampShaft = (v: number, max: number) => Math.min(max - CONFIG.ballRadius, Math.max(CONFIG.ballRadius, v));
 
-// Target control: the pointer drives the landing disc; a PD controller
-// synthesizes ordinary tilt input that chases it (sim contract untouched).
 function controlTilt(kb: { x: number; z: number }): { x: number; z: number } {
   if (!driveTarget) return kb;
   const b = sim.ball;
@@ -119,8 +201,6 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   const nowMs = performance.now();
   const frameMs = Math.min(renderer.engine.getDeltaTime(), MAX_FRAME_MS);
 
-  // RELATIVE pointer drag (owner): anchor the target on the ball at
-  // touch-start, then move it by the amplified world-space drag delta.
   const pt = input.pointer();
   if (CONFIG.targetControl && pt.active && !input.forced()) {
     if (!dragAnchor) dragAnchor = { x: sim.ball.x, z: sim.ball.z };
@@ -138,7 +218,6 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     driveTarget = null;
   }
 
-  // Chain-bomb showcase (owner): the mega-cascade plays out in slow motion.
   const slowMo = sim.queue.length > 0 && sim.tick - sim.chainBlastTick < 720;
   if (hitStopMs > 0) {
     hitStopMs = Math.max(0, hitStopMs - frameMs);
@@ -151,22 +230,28 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     const events = step(sim, s.x, s.z);
     if (events.length) {
       renderer.applyEvents(events);
+      trackEvents(daily, events, sim);
       hitStopMs = Math.max(hitStopMs, renderer.consumeHitStop());
-      if (events.some((e) => e.kind === "finish")) onFinish();
+      if (events.some((e) => e.kind === "finish")) {
+        save("tf.daily", daily);
+        onFinish();
+      }
     }
     accumulator -= DT_MS;
   }
 
+  renderer.syncLayout(sim.blocks);
   renderer.syncBall(sim.ball);
   const path = sim.finished ? null : predictPath(sim, lastTilt.x, lastTilt.z);
-  if (path && path.points.length && !path.wallHit) lastLandY = path.points[path.points.length - 1].y;
+  if (path && path.points.length && path.landed) lastLandY = path.points[path.points.length - 1].y;
   renderer.setAim(
-    path ? path.points : null,
+    path && (path.landed || driveTarget) ? path.points : null,
     driveTarget ? { x: driveTarget.x, y: lastLandY, z: driveTarget.z } : null,
     path ? path.wallHit : false,
   );
   renderer.frame(frameMs, lastTilt);
-  ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo);
+  ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth);
+  ui.setJump(sim.jumpCd <= 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks);
   ui.setBoosterBar(inventory, sim.armed, sim.runOn);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;
 });
@@ -178,6 +263,9 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   },
   get score() {
     return sim.score;
+  },
+  get depth() {
+    return sim.depth;
   },
   get finished() {
     return sim.finished;
@@ -203,20 +291,29 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   get bank() {
     return bank;
   },
+  get level() {
+    return level;
+  },
   get inventory() {
     return { ...inventory };
   },
   get armed() {
     return { ...sim.armed };
   },
-  get runOn() {
-    return { ...sim.runOn };
+  get jumpCd() {
+    return sim.jumpCd;
   },
   grant(id: BoosterId, n = 1) {
     inventory[id] = (inventory[id] ?? 0) + n;
   },
   activate(i: number) {
     tryActivate(BOOSTER_ORDER[i]);
+  },
+  jump() {
+    tryJump();
+  },
+  addBank(n: number) {
+    bank += n;
   },
   setTilt(x: number, z: number) {
     input.setForced({ x, z });

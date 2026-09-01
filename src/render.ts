@@ -42,7 +42,10 @@ export interface Renderer {
   applyEvents: (events: SimEvent[]) => void;
   frame: (frameMs: number, tilt: { x: number; z: number }) => void;
   consumeHitStop: () => number;
-  resetBlocks: () => void;
+  setLayout: (blocks: BlockDef[]) => void; // new run: rebuild all block meshes
+  syncLayout: (blocks: BlockDef[]) => void; // streamed tiers: add the new ones
+  setSkin: (id: string) => void;
+  jumpFx: (b: { x: number; y: number; z: number }) => void;
   setAim: (
     points: { x: number; y: number; z: number }[] | null,
     disc?: { x: number; y: number; z: number } | null,
@@ -93,20 +96,19 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     return m;
   }
 
-  const floorMesh = MeshBuilder.CreateBox("floor", { width: C.shaftW, height: 80, depth: C.shaftD }, scene);
-  floorMesh.position = toLocal(C.shaftW / 2, C.floorY + 40, C.shaftD / 2);
-  floorMesh.material = makeMaterial("mFloor", [0.18, 0.22, 0.32], 0.4);
-  floorMesh.parent = tower;
-
-  const wallH = C.floorY + 400;
+  // Endless tower: no floor. Walls are long boxes repositioned to follow the
+  // ball so the shaft never visually ends.
+  const wallH = 30000;
   const wallT = 60;
   const wallMat = makeMaterial("mWall", [0.26, 0.3, 0.46], 0.25, 0.45);
+  const walls: Mesh[] = [];
   const mkWall = (name: string, w: number, d: number, px: number, pz: number, visible: boolean) => {
     const wall = MeshBuilder.CreateBox(name, { width: w, height: wallH, depth: d }, scene);
-    wall.position = new Vector3(px, -wallH / 2 + 200, pz);
+    wall.position = new Vector3(px, 0, pz);
     wall.material = wallMat;
     wall.parent = tower;
     if (!visible) wall.setEnabled(false);
+    walls.push(wall);
   };
   mkWall("w0", wallT, C.shaftD + wallT, -(C.shaftW / 2 + wallT / 2), 0, true);
   mkWall("w1", wallT, C.shaftD + wallT, C.shaftW / 2 + wallT / 2, 0, true);
@@ -120,25 +122,34 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     bomb: makeMaterial("mBomb", [1.0, 0.62, 0.12], 0.7),
     bumper: makeMaterial("mBumper", [0.1, 1.0, 0.45], 0.85), // must scream "launcher"
     spike: makeMaterial("mSpike", [0.85, 0.12, 0.18], 0.5),
+    mine: makeMaterial("mMine", [0.9, 0.1, 0.12], 0.9), // pulsing danger red
   };
   const glassShardMat = makeMaterial("mGlassShard", [0.55, 0.85, 1.0], 0.5, 0.75);
   glassShardMat.backFaceCulling = false;
 
   const blockInfo = new Map<number, BlockDef>();
   const blockMeshes = new Map<number, Mesh>();
-  for (const b of layout) {
+
+  function addBlockMesh(b: BlockDef): void {
     blockInfo.set(b.id, b);
-    const mesh = MeshBuilder.CreateBox(
-      `b${b.id}`,
-      { width: b.hx * 2 - 6, height: b.hy * 2 - 4, depth: b.hz * 2 - 6 },
-      scene,
-    );
-    mesh.position = toLocal(b.cx, b.cy, b.cz);
-    mesh.material = MATS[b.type];
+    let mesh: Mesh;
+    if (b.type === "mine") {
+      // A MINE must read as lethal: dark sphere with a glowing red core.
+      mesh = MeshBuilder.CreateSphere(`b${b.id}`, { diameter: 76, segments: 10 }, scene);
+      mesh.material = MATS.mine;
+      mesh.position = toLocal(b.cx, b.cy - 6, b.cz);
+    } else {
+      mesh = MeshBuilder.CreateBox(
+        `b${b.id}`,
+        { width: b.hx * 2 - 6, height: b.hy * 2 - 4, depth: b.hz * 2 - 6 },
+        scene,
+      );
+      mesh.material = MATS[b.type];
+      mesh.position = toLocal(b.cx, b.cy, b.cz);
+    }
     mesh.parent = tower;
     blockMeshes.set(b.id, mesh);
     if (b.type === "spike") {
-      // Spikes must LOOK like spikes (owner): a 2×2 bed of cones on the base.
       for (const [ox, oz] of [
         [-22, -22],
         [-22, 22],
@@ -151,14 +162,23 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           scene,
         );
         cone.material = MATS.spike;
-        cone.parent = mesh; // hides together with the base
+        cone.parent = mesh;
         cone.position = new Vector3(ox, b.hy + 26, oz);
       }
     }
   }
+  for (const b of layout) addBlockMesh(b);
 
-  const ballMat = makeMaterial("mBall", [0.35, 0.9, 1.0], 0.5); // dimmer: the
-  // glow halo was overpowering depth cues (owner: can't tell above/below tier)
+  // Ball skins (level unlocks): distinct code-made materials, no textures.
+  const SKINS: Record<string, { rgb: [number, number, number]; emissive: number }> = {
+    core: { rgb: [0.35, 0.9, 1.0], emissive: 0.5 },
+    ember: { rgb: [1.0, 0.45, 0.15], emissive: 0.8 },
+    prism: { rgb: [0.85, 0.6, 1.0], emissive: 0.65 },
+    galaxy: { rgb: [0.45, 0.3, 1.0], emissive: 0.9 },
+    aurora: { rgb: [0.3, 1.0, 0.7], emissive: 0.75 },
+  };
+  let skinBase = SKINS.core;
+  const ballMat = makeMaterial("mBall", skinBase.rgb, skinBase.emissive);
   const ballMesh = MeshBuilder.CreateSphere("ball", { diameter: C.ballRadius * 2 }, scene);
   ballMesh.material = ballMat;
   ballMesh.parent = tower;
@@ -224,7 +244,6 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   }
 
   function updateEffects(dtS: number): void {
-    const floorTopLocal = -C.floorY;
     for (let i = shards.length - 1; i >= 0; i--) {
       const s = shards[i];
       s.life -= dtS;
@@ -237,14 +256,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       s.mesh.position.x += s.vx * dtS;
       s.mesh.position.y += s.vy * dtS;
       s.mesh.position.z += s.vz * dtS;
-      if (s.mesh.position.y < floorTopLocal + s.size / 2 && s.vy < 0) {
-        s.mesh.position.y = floorTopLocal + s.size / 2;
-        s.vy = -s.vy * 0.45;
-        s.vx *= 0.7;
-        s.vz *= 0.7;
-        s.rx *= 0.5;
-        s.rz *= 0.5;
-      }
+      // No floor in the endless tower — debris tumbles into the abyss.
       s.mesh.rotation.x += s.rx * dtS;
       s.mesh.rotation.z += s.rz * dtS;
       s.mesh.scaling.setAll(Math.min(1, (s.life / s.maxLife) * 4));
@@ -306,6 +318,45 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           if (info) spawnShards(info, e);
           ballPulse = 1;
           if (e.cascade) pendingHitStop = C.hitStopMs;
+        } else if ((e.kind === "mine" || e.kind === "shield") && e.id !== undefined) {
+          // Mine detonation: violent red burst; on a shield hit you survive it.
+          const info = blockInfo.get(e.id);
+          blockMeshes.get(e.id)?.setEnabled(false);
+          if (info) {
+            for (let i = 0; i < 22; i++) {
+              const size = 18 + Math.random() * 26;
+              const m = MeshBuilder.CreateBox("mine-sh", { size }, scene);
+              m.material = MATS.mine;
+              m.parent = tower;
+              m.position = toLocal(info.cx, info.cy, info.cz).add(
+                new Vector3((Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90),
+              );
+              const maxLife = 1.2 + Math.random() * 0.9;
+              shards.push({
+                mesh: m,
+                vx: (Math.random() - 0.5) * 1600,
+                vy: 200 + Math.random() * 900,
+                vz: (Math.random() - 0.5) * 1600,
+                rx: (Math.random() - 0.5) * 14,
+                rz: (Math.random() - 0.5) * 14,
+                life: maxLife,
+                maxLife,
+                size,
+              });
+            }
+            for (let ri = 0; ri < 3; ri++) {
+              const ring = MeshBuilder.CreateDisc("mr", { radius: 60 + ri * 30, tessellation: 32 }, scene);
+              const rmat = makeMaterial(`mrm${e.id}-${ri}-${performance.now()}`, [1, 0.25, 0.15], 1);
+              rmat.alpha = 0.6;
+              ring.material = rmat;
+              ring.rotation.x = Math.PI / 2;
+              ring.position = toLocal(info.cx, info.cy - 10 - ri * 8, info.cz);
+              ring.parent = tower;
+              rings.push({ mesh: ring, mat: rmat, life: 0.5 + ri * 0.12 });
+            }
+          }
+          ballPulse = 1;
+          pendingHitStop = 220;
         } else if (e.kind === "bumper" && e.id !== undefined) {
           const info = blockInfo.get(e.id);
           if (info) {
@@ -327,8 +378,28 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       pendingHitStop = 0;
       return v;
     },
-    resetBlocks() {
-      for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
+    setLayout(blocks) {
+      for (const [, mesh] of blockMeshes) mesh.dispose();
+      blockMeshes.clear();
+      blockInfo.clear();
+      for (const b of blocks) addBlockMesh(b);
+    },
+    syncLayout(blocks) {
+      for (const b of blocks) if (!blockMeshes.has(b.id)) addBlockMesh(b);
+    },
+    setSkin(id) {
+      skinBase = SKINS[id] ?? SKINS.core;
+      ballMat.diffuseColor.set(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2]);
+    },
+    jumpFx(b) {
+      const ring = MeshBuilder.CreateDisc("jr", { radius: 55, tessellation: 28 }, scene);
+      const rmat = makeMaterial(`jm${performance.now()}`, [0.6, 0.95, 1], 1);
+      rmat.alpha = 0.5;
+      ring.material = rmat;
+      ring.rotation.x = Math.PI / 2;
+      ring.position = toLocal(b.x, b.y + 30, b.z);
+      ring.parent = tower;
+      rings.push({ mesh: ring, mat: rmat, life: 0.3 });
     },
     setAim(points, disc, wallHit = false) {
       if (!points || points.length < 2 || !C.laserOn) {
@@ -379,8 +450,11 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
       // Ball pulse: the impact feedback that replaced camera shake.
       ballPulse *= 0.9;
-      const glowK = 0.5 + ballPulse * 0.8;
-      ballMat.emissiveColor.set(0.35 * glowK, 0.9 * glowK, 1.0 * glowK);
+      const glowK = skinBase.emissive + ballPulse * 0.8;
+      ballMat.emissiveColor.set(skinBase.rgb[0] * glowK, skinBase.rgb[1] * glowK, skinBase.rgb[2] * glowK);
+      // Mines pulse with menace; walls follow the endless fall.
+      const menace = 0.6 + 0.35 * Math.sin(performance.now() / 180);
+      MATS.mine.emissiveColor.set(0.9 * menace, 0.08 * menace, 0.1 * menace);
       ballMesh.scaling.setAll(1 + ballPulse * 0.25);
 
       ballMesh.computeWorldMatrix(true);
@@ -407,6 +481,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       camAim.z += (p.z - camAim.z) * C.camSmooth;
       camera.position.set(camPos.x, camPos.y, camPos.z);
       camera.setTarget(camAim);
+      for (const w of walls) w.position.y = p.y; // endless shaft follows the fall
     },
   };
 }

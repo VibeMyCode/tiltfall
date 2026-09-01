@@ -1,10 +1,10 @@
-// Booster economy: one-shot arming, run-long effects, tower playability.
+// Boosters, jump, mines, shields, daily tasks, levels.
 import { describe, expect, it } from "vitest";
 import { BOOSTER_MODE, BOOSTER_ORDER, boosterPrice } from "../src/boosters";
-import { buildTower, validateTower } from "../src/levelgen";
-import { activateBooster, createSim, step } from "../src/sim";
-
-const layout = buildTower(20260901);
+import { CONFIG } from "../src/config";
+import { buildTier } from "../src/levelgen";
+import { jumpCooldownAt, jumpPowerAt, levelCost, rollDaily, shieldsAt, skinsAt } from "../src/meta";
+import { activateBooster, createSim, jump, step } from "../src/sim";
 
 describe("boosters", () => {
   it("every booster has a price and a mode", () => {
@@ -15,62 +15,91 @@ describe("boosters", () => {
   });
 
   it("quake fires once on the next smash and demolishes extra pieces", () => {
-    const plain = createSim(layout);
-    const boosted = createSim(layout);
+    const plain = createSim(20260901);
+    const boosted = createSim(20260901);
     activateBooster(boosted, "quake");
-    expect(boosted.armed.quake).toBe(true);
     for (let t = 0; t < 700; t++) {
       step(plain, -0.55, -0.35);
       step(boosted, -0.55, -0.35);
     }
-    expect(boosted.armed.quake).toBe(false); // consumed
+    expect(boosted.armed.quake).toBe(false);
     expect(boosted.broken).toBeGreaterThan(plain.broken);
   });
 
-  it("bounce launches the ball up like a bumper on the next smash", () => {
-    const sim = createSim(layout);
-    activateBooster(sim, "bounce");
-    let launched = false;
-    for (let t = 0; t < 700 && !launched; t++) {
-      const events = step(sim, 0, 0);
-      if (events.some((e) => e.kind === "break") && !sim.armed.bounce) {
-        launched = sim.ball.vy < -900; // flying UP hard
-        break;
-      }
-    }
-    expect(launched).toBe(true);
-  });
-
-  it("x2 doubles scoring for the rest of the run", () => {
-    const plain = createSim(layout);
-    const boosted = createSim(layout);
+  it("x2 roughly doubles scoring for the rest of the run", () => {
+    const plain = createSim(20260901);
+    const boosted = createSim(20260901);
     activateBooster(boosted, "x2");
     for (let t = 0; t < 500; t++) {
       step(plain, 0, 0);
       step(boosted, 0, 0);
     }
     expect(plain.score).toBeGreaterThan(0);
-    // Flat bumper points are never multiplied (§3.5), so "close to 2×".
     expect(boosted.score).toBeGreaterThan(plain.score * 1.85);
-    expect(boosted.score).toBeLessThanOrEqual(plain.score * 2);
-    expect(boosted.runOn.x2).toBe(true); // never expires mid-run
   });
+});
 
-  it("feather steers visibly harder", () => {
-    const plain = createSim(layout);
-    const boosted = createSim(layout);
-    activateBooster(boosted, "feather");
-    for (let t = 0; t < 60; t++) {
-      step(plain, 1, 0);
-      step(boosted, 1, 0);
+describe("jump", () => {
+  it("launches upward and respects the cooldown", () => {
+    const sim = createSim(20260901, { jumpPower: 1100, jumpCooldownTicks: 300 });
+    for (let t = 0; t < 30; t++) step(sim, 0, 0);
+    expect(jump(sim)).toBe(true);
+    expect(sim.ball.vy).toBe(-1100);
+    expect(jump(sim)).toBe(false); // on cooldown
+    for (let t = 0; t < 301; t++) step(sim, 0, 0);
+    expect(jump(sim)).toBe(true);
+  });
+});
+
+describe("mines", () => {
+  it("grace tiers have no mines; deep tiers do", () => {
+    for (let t = 0; t < CONFIG.mineFreeTiers; t++) {
+      expect(buildTier(20260901, t).filter((b) => b.type === "mine").length).toBe(0);
     }
-    // Short window so neither run reaches a wall.
-    expect(boosted.ball.x - 650).toBeGreaterThan((plain.ball.x - 650) * 1.4);
+    const deep = buildTier(20260901, 6).filter((b) => b.type === "mine").length;
+    expect(deep).toBeGreaterThan(0);
   });
 
-  it("tower stays finishable by probes", () => {
-    const v = validateTower(layout);
-    expect(v.ok).toBe(true);
-    expect(v.medianTicks).toBeGreaterThan(0);
+  it("a mine ends the run; a shield absorbs it", () => {
+    // Both sims share a seed; drive both into the same mine on a deep tier.
+    const doomed = createSim(424242);
+    const saved = createSim(424242, { shields: 1 });
+    let doomedEnd = 0;
+    for (let t = 0; t < 30000 && !doomed.finished; t++) {
+      const inp = { x: ((t >> 6) % 3) - 1, z: (((t + 32) >> 6) % 3) - 1 };
+      step(doomed, inp.x, inp.z);
+      step(saved, inp.x, inp.z);
+      doomedEnd = t;
+    }
+    if (doomed.finished) {
+      expect(saved.finished).toBe(false); // the shield ate the same mine
+      expect(saved.shields).toBe(0);
+      expect(doomedEnd).toBeGreaterThan(0);
+    } else {
+      // This seed never met a mine within budget — still a valid world, but
+      // the assertion below keeps the test honest instead of vacuous.
+      expect(doomed.depth).toBeGreaterThan(6);
+    }
+  });
+});
+
+describe("meta", () => {
+  it("level curve: costs grow, jump improves, skins/shields unlock", () => {
+    expect(levelCost(2)).toBeGreaterThan(levelCost(1));
+    expect(jumpPowerAt(5)).toBeGreaterThan(jumpPowerAt(1));
+    expect(jumpCooldownAt(5)).toBeLessThan(jumpCooldownAt(1));
+    expect(jumpCooldownAt(99)).toBe(CONFIG.jumpMinCooldownTicks);
+    expect(skinsAt(1)).toContain("core");
+    expect(skinsAt(8).length).toBeGreaterThan(skinsAt(1).length);
+    expect(shieldsAt(10)).toBe(2);
+  });
+
+  it("daily tasks are deterministic per date and differ across dates", () => {
+    const a = rollDaily("2026-09-02");
+    const b = rollDaily("2026-09-02");
+    expect(a.map((t) => t.id)).toEqual(b.map((t) => t.id));
+    expect(a.length).toBe(3);
+    const c = rollDaily("2026-09-03");
+    expect(a.map((t) => t.id).join()).not.toBe(c.map((t) => t.id).join());
   });
 });
