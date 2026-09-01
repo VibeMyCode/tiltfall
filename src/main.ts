@@ -101,8 +101,12 @@ renderer.scene.onBeforeRenderObservable.add(() => {
 
   renderer.syncBall(sim.ball);
   const path = sim.finished ? null : predictPath(sim, lastTilt.x, lastTilt.z);
-  if (path && path.length) lastLandY = path[path.length - 1].y;
-  renderer.setAim(path, driveTarget ? { x: driveTarget.x, y: lastLandY, z: driveTarget.z } : null);
+  if (path && path.points.length && !path.wallHit) lastLandY = path.points[path.points.length - 1].y;
+  renderer.setAim(
+    path ? path.points : null,
+    driveTarget ? { x: driveTarget.x, y: lastLandY, z: driveTarget.z } : null,
+    path ? path.wallHit : false,
+  );
   renderer.frame(frameMs, lastTilt);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;

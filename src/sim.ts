@@ -205,11 +205,17 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
 // surface: an un-broken piece top or the floor. Falls straight through tier
 // gaps like a real shadow would (owner fix: never hover on empty air). The
 // LAST point is the landing spot. Render-only consumer; never mutates state.
-export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: number; y: number; z: number }[] {
+export function predictPath(
+  s: SimState,
+  tiltX: number,
+  tiltZ: number,
+): { points: { x: number; y: number; z: number }[]; wallHit: boolean } {
   const C = CONFIG;
+  const WALL_CUT_SPEED = 150; // gentle wall slides do not cut the line
   const pts: { x: number; y: number; z: number }[] = [];
+  let wallHit = false;
   let { x, y, z, vx, vy, vz } = s.ball;
-  for (let i = 0; i < 900; i++) {
+  outer: for (let i = 0; i < 900; i++) {
     vx += C.g0 * C.kTilt * tiltX * C.dt;
     vy += C.g0 * C.dt;
     vz += C.g0 * C.kTilt * tiltZ * C.dt;
@@ -226,21 +232,23 @@ export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: num
     x += vx * C.dt;
     y += vy * C.dt;
     z += vz * C.dt;
-    if (x < C.ballRadius) {
-      x = C.ballRadius;
-      vx = -vx * C.wallRestitution;
-    }
-    if (x > C.shaftW - C.ballRadius) {
-      x = C.shaftW - C.ballRadius;
-      vx = -vx * C.wallRestitution;
-    }
-    if (z < C.ballRadius) {
-      z = C.ballRadius;
-      vz = -vz * C.wallRestitution;
-    }
-    if (z > C.shaftD - C.ballRadius) {
-      z = C.shaftD - C.ballRadius;
-      vz = -vz * C.wallRestitution;
+    // A hard wall contact CUTS the line at the wall (owner: the bent bounce
+    // segment looked wrong); soft slides along a wall keep predicting.
+    const wallChecks: [boolean, () => void][] = [
+      [x < C.ballRadius && vx < 0, () => ((x = C.ballRadius), (vx = -vx * C.wallRestitution))],
+      [x > C.shaftW - C.ballRadius && vx > 0, () => ((x = C.shaftW - C.ballRadius), (vx = -vx * C.wallRestitution))],
+      [z < C.ballRadius && vz < 0, () => ((z = C.ballRadius), (vz = -vz * C.wallRestitution))],
+      [z > C.shaftD - C.ballRadius && vz > 0, () => ((z = C.shaftD - C.ballRadius), (vz = -vz * C.wallRestitution))],
+    ];
+    for (const [hit, resolve] of wallChecks) {
+      if (!hit) continue;
+      const lateral = Math.max(Math.abs(vx), Math.abs(vz));
+      if (lateral > WALL_CUT_SPEED) {
+        pts.push({ x, y, z });
+        wallHit = true;
+        break outer;
+      }
+      resolve();
     }
     if (i % 5 === 0) pts.push({ x, y, z });
     if (y + C.ballRadius >= C.floorY) {
@@ -262,5 +270,5 @@ export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: num
     }
     if (landed) break;
   }
-  return pts;
+  return { points: pts, wallHit };
 }

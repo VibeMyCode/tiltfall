@@ -43,7 +43,11 @@ export interface Renderer {
   frame: (frameMs: number, tilt: { x: number; z: number }) => void;
   consumeHitStop: () => number;
   resetBlocks: () => void;
-  setAim: (points: { x: number; y: number; z: number }[] | null, disc?: { x: number; y: number; z: number } | null) => void;
+  setAim: (
+    points: { x: number; y: number; z: number }[] | null,
+    disc?: { x: number; y: number; z: number } | null,
+    wallHit?: boolean,
+  ) => void;
   // Screen (client px) → sim XZ on the horizontal plane at sim height planeY.
   screenToShaft: (clientX: number, clientY: number, planeY: number) => { x: number; z: number } | null;
 }
@@ -292,14 +296,24 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     resetBlocks() {
       for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
     },
-    setAim(points, disc) {
+    setAim(points, disc, wallHit = false) {
       if (!points || points.length < 2 || !C.laserOn) {
         thread.setEnabled(false);
         landDisc.setEnabled(false);
         return;
       }
       thread.setEnabled(true);
-      landDisc.setEnabled(true);
+      // A wall-cut path has no honest landing — hide the disc unless the
+      // user is actively driving it (then it is a target, not a landing).
+      landDisc.setEnabled(Boolean(disc) || !wallHit);
+      if (!disc && wallHit) {
+        for (let i = 0; i < N; i++) {
+          const src = points[Math.round((i * (points.length - 1)) / (N - 1))];
+          threadPts[i].set(src.x - C.shaftW / 2, -src.y, src.z - C.shaftD / 2);
+        }
+        thread = MeshBuilder.CreateLines("aimThread", { points: threadPts, instance: thread });
+        return;
+      }
       // Resample the (possibly multi-tier) path evenly onto N thread points.
       for (let i = 0; i < N; i++) {
         const src = points[Math.round((i * (points.length - 1)) / (N - 1))];
