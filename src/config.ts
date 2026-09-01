@@ -51,17 +51,17 @@ export const CONFIG = {
 
   // BOOSTERS (owner design): bought from the BANK after a run, activated on
   // demand. Impact boosters are ONE-SHOT (armed until the next matching hit);
-  // x2/feather run to the end of the run. Prices tuned so a typical 5-7k run
+  // x2/heavy/agility run to the end of the run. Prices tuned so a typical run
   // affords 2-3 purchases.
   boosters: {
-    quake: { price: 3000, blastCells: 3.4 }, // next smash blasts a huge radius
-    chain: { price: 2500, blastMul: 2.2 }, // next bomb mega-chains + slow-mo
-    x2: { price: 2200, scoreMul: 2 }, // rest of the run
-    heavy: { price: 1800 }, // next hit breaks ANY piece instantly
-    bounce: { price: 1500 }, // next smash launches you up like a bumper
-    feather: { price: 1200, tiltMul: 1.8 }, // rest of the run
+    quake: { price: 3000, blastCells: 3.4 }, // one-shot: huge blast + slow-mo
+    chain: { price: 2500, blastMul: 2.2 }, // one-shot: mega-chain + slow-mo
+    x2: { price: 2200, scoreMul: 2 }, // run-long
+    heavy: { price: 1800, gravityMul: 1.12 }, // run-long: lead ball, stone = glass
+    shield: { price: 1500 }, // instant: +1 mine shield this run
+    agility: { price: 1200, tiltMul: 1.8 }, // run-long: razor steering + comet tail
   },
-  slowMoScale: 0.35, // playback speed while a chain-bomb cascade showcases
+  slowMoScale: 0.35, // playback speed for quake/chain showcase cascades
 
   // JUMP (owner design): Space / on-screen button; the ball hops up with a
   // cooldown. Player LEVELS (bought with banked score) raise the jump and

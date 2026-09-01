@@ -37,7 +37,7 @@ export interface ResultsModel {
 }
 
 export interface UI {
-  setHud: (timeS: number, score: number, combo: number, depth: number) => void;
+  setHud: (timeS: number, score: number, combo: number, depth: number, shields: number) => void;
   setJump: (readyFrac: number) => void;
   setBoosterBar: (
     inventory: Record<BoosterId, number>,
@@ -63,6 +63,7 @@ export function createUI(h: UIHandlers): UI {
     <div class="hud-item hud-score" id="hud-score">0</div>
     <div class="hud-item hud-combo" id="hud-combo">×1</div>
     <div class="hud-item hud-depth" id="hud-depth">◈ 0</div>
+    <div class="hud-item hud-shield hidden" id="hud-shield">⛨ 0</div>
     <button class="hud-item hud-toggle" id="hud-invert"></button>`;
   document.body.appendChild(hud);
   const invertBtn = hud.querySelector<HTMLButtonElement>("#hud-invert")!;
@@ -138,8 +139,9 @@ export function createUI(h: UIHandlers): UI {
     const shields = m.level.shields();
     const lb = el("level-box");
     lb.innerHTML = `
-      <div class="lvl-head">LEVEL <b>${lvl}</b>
-        <span class="lvl-stats">jump ${m.level.jumpPower()} · cd ${m.level.jumpCdS().toFixed(1)}s${shields ? ` · ⛨×${shields}` : ""}</span>
+      <div class="lvl-head">
+        <span class="lvl-name">LEVEL <b>${lvl}</b></span>
+        <span class="lvl-stats"><i>jump</i><b>${m.level.jumpPower()}</b><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
       </div>
       <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;
     lb.querySelector<HTMLButtonElement>("#lvl-buy")!.addEventListener("click", () => {
@@ -171,7 +173,8 @@ export function createUI(h: UIHandlers): UI {
       btn.className = "shop-item";
       btn.style.setProperty("--accent", info.color);
       btn.disabled = m.shop.bank < price;
-      btn.innerHTML = `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><small>${info.desc}</small><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`;
+      btn.title = info.desc; // hover tooltip — no card scroll from long texts
+      btn.innerHTML = `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`;
       btn.addEventListener("click", () => {
         m.shop.buy(id);
         renderPanels();
@@ -202,10 +205,13 @@ export function createUI(h: UIHandlers): UI {
   }
 
   return {
-    setHud(timeS, score, combo, depth) {
+    setHud(timeS, score, combo, depth, shields) {
       el("hud-time").textContent = `${timeS.toFixed(1)}s`;
       el("hud-score").textContent = String(score);
       el("hud-depth").textContent = `◈ ${depth}`;
+      const sh = el("hud-shield");
+      sh.textContent = `⛨ ${shields}`;
+      sh.classList.toggle("hidden", shields <= 0);
       const comboEl = el("hud-combo");
       comboEl.textContent = `×${combo}`;
       comboEl.classList.toggle("hot", combo >= 4);

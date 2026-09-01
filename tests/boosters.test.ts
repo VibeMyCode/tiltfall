@@ -10,7 +10,7 @@ describe("boosters", () => {
   it("every booster has a price and a mode", () => {
     for (const id of BOOSTER_ORDER) {
       expect(boosterPrice(id)).toBeGreaterThan(0);
-      expect(["armed", "run"]).toContain(BOOSTER_MODE[id]);
+      expect(["armed", "run", "instant"]).toContain(BOOSTER_MODE[id]);
     }
   });
 

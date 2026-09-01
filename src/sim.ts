@@ -101,8 +101,11 @@ function ensureTiers(s: SimState): void {
 }
 
 export function activateBooster(s: SimState, id: BoosterId): void {
-  if (BOOSTER_MODE[id] === "armed") s.armed[id] = true;
-  else s.runOn[id] = true;
+  const mode = BOOSTER_MODE[id];
+  if (mode === "armed") s.armed[id] = true;
+  else if (mode === "instant") {
+    if (id === "shield") s.shields++;
+  } else s.runOn[id] = true;
 }
 
 // JUMP (owner design): Space / button; leveling raises power, cuts cooldown.
@@ -160,11 +163,12 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
         // mega-bomb; real bombs caught in the wave explode too — the chain
         // reaction — and the showcase runs in slow motion.
         s.armed.chain = false;
-        s.chainBlastTick = s.tick;
+        s.chainBlastTick = s.tick; // arms the slow-mo showcase
         queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * B.chain.blastMul, CONFIG.cascadeStepTicks);
       }
       if (!cascade && s.armed.quake) {
         s.armed.quake = false;
+        s.chainBlastTick = s.tick; // quake gets the same smooth showcase
         queueBlast(s, b.cx, b.cy, b.cz, B.quake.blastCells * CONFIG.cell, 6);
       }
     }
@@ -217,17 +221,12 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
     const j = Math.round((Math.abs(vAxis) * CONFIG.ballMass) / CONFIG.impulseScale);
     const dmg = (s.groupDamage[b.groupId] ?? 0) + j;
     const breakable = b.threshold !== Infinity;
-    const heavySmash = breakable && s.armed.heavy;
-    if (breakable && (dmg >= b.threshold || heavySmash)) {
-      if (heavySmash) s.armed.heavy = false;
+    // HEAVY (run-long): the lead ball treats stone like glass.
+    const threshold = s.runOn.heavy && b.type === "stone" ? CONFIG.thresholds.glass : b.threshold;
+    if (breakable && dmg >= threshold) {
       breakGroup(s, b.groupId, false, events);
       if (axis === "y" && vAxis > 0) {
-        if (s.armed.bounce) {
-          s.armed.bounce = false;
-          ball.vy = -CONFIG.bumperMinLaunch;
-        } else {
-          ball.vy = -ball.vy * CONFIG.breakBounce;
-        }
+        ball.vy = -ball.vy * CONFIG.breakBounce;
       } else if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
       else if (axis === "y") ball.vy *= CONFIG.breakThroughLoss;
       else ball.vz *= CONFIG.breakThroughLoss;
@@ -307,9 +306,10 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   ensureTiers(s);
   const { ball } = s;
   const C = CONFIG;
-  const kTiltMul = s.runOn.feather ? C.boosters.feather.tiltMul : 1;
+  const kTiltMul = s.runOn.agility ? C.boosters.agility.tiltMul : 1;
+  const gMul = s.runOn.heavy ? C.boosters.heavy.gravityMul : 1;
   ball.vx += C.g0 * C.kTilt * kTiltMul * tiltX * C.dt;
-  ball.vy += C.g0 * C.dt;
+  ball.vy += C.g0 * gMul * C.dt;
   ball.vz += C.g0 * C.kTilt * kTiltMul * tiltZ * C.dt;
   ball.vx *= C.drag;
   ball.vy *= C.drag;
@@ -360,7 +360,7 @@ export function predictPath(
 ): { points: { x: number; y: number; z: number }[]; wallHit: boolean; landed: boolean } {
   const C = CONFIG;
   const WALL_CUT_SPEED = 150;
-  const kTiltMul = s.runOn.feather ? C.boosters.feather.tiltMul : 1;
+  const kTiltMul = s.runOn.agility ? C.boosters.agility.tiltMul : 1;
   const pts: { x: number; y: number; z: number }[] = [];
   let wallHit = false;
   let landed = false;

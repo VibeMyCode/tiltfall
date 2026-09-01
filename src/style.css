@@ -372,3 +372,18 @@ canvas#scene {
 }
 .level-box { border-top: none; padding-top: 4px; }
 body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { display: none; }
+
+/* Level row: proper alignment, readable labels (owner) */
+.lvl-head { display: flex; justify-content: space-between; align-items: center; min-height: 30px; }
+.lvl-name { font-size: 13px; letter-spacing: 0.14em; color: #9fb4d8; }
+.lvl-name b { color: #ffe9a8; font-size: 17px; margin-left: 4px; }
+.lvl-stats { display: flex; align-items: baseline; gap: 6px; }
+.lvl-stats i { font-style: normal; font-size: 10px; letter-spacing: 0.08em; color: #6f7ea3; text-transform: uppercase; }
+.lvl-stats b { font-size: 13px; color: #cfe0ff; font-variant-numeric: tabular-nums; margin-right: 6px; }
+
+/* Compact shop cards — descriptions moved to hover tooltips */
+.shop-item { min-height: 0; padding: 10px 6px 8px; gap: 4px; }
+.shop-item b { font-size: 10px; }
+
+.hud-shield { color: #7dffb3; }
+.hud-item.hidden { display: none; }

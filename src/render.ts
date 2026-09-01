@@ -12,6 +12,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CONFIG } from "./config";
@@ -45,6 +46,8 @@ export interface Renderer {
   setLayout: (blocks: BlockDef[]) => void; // new run: rebuild all block meshes
   syncLayout: (blocks: BlockDef[]) => void; // streamed tiers: add the new ones
   setSkin: (id: string) => void;
+  setBallMode: (mode: "skin" | "lead") => void; // HEAVY booster look
+  setTrail: (on: boolean) => void; // AGILITY comet tail
   jumpFx: (b: { x: number; y: number; z: number }) => void;
   setAim: (
     points: { x: number; y: number; z: number }[] | null,
@@ -169,16 +172,72 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   }
   for (const b of layout) addBlockMesh(b);
 
-  // Ball skins (level unlocks): distinct code-made materials, no textures.
-  const SKINS: Record<string, { rgb: [number, number, number]; emissive: number }> = {
-    core: { rgb: [0.35, 0.9, 1.0], emissive: 0.5 },
-    ember: { rgb: [1.0, 0.45, 0.15], emissive: 0.8 },
-    prism: { rgb: [0.85, 0.6, 1.0], emissive: 0.65 },
-    galaxy: { rgb: [0.45, 0.3, 1.0], emissive: 0.9 },
-    aurora: { rgb: [0.3, 1.0, 0.7], emissive: 0.75 },
+  // Ball skins (level unlocks): procedural — flat colors AND canvas-drawn
+  // patterns (stripes/stars/waves) via DynamicTexture. Emissive kept modest
+  // so colors read true (owner: ember was washing out to white).
+  const SKINS: Record<
+    string,
+    { rgb: [number, number, number]; emissive: number; pattern?: (ctx: CanvasRenderingContext2D) => void }
+  > = {
+    core: { rgb: [0.35, 0.9, 1.0], emissive: 0.35 },
+    ember: { rgb: [1.0, 0.42, 0.12], emissive: 0.3 },
+    prism: {
+      rgb: [1, 1, 1],
+      emissive: 0.22,
+      pattern: (ctx) => {
+        const colors = ["#ff5f8f", "#ffb347", "#7dffb3", "#59c4ff", "#b48cff"];
+        for (let i = 0; i < 16; i++) {
+          ctx.fillStyle = colors[i % colors.length];
+          ctx.fillRect(0, i * 16, 256, 16);
+        }
+      },
+    },
+    galaxy: {
+      rgb: [1, 1, 1],
+      emissive: 0.3,
+      pattern: (ctx) => {
+        ctx.fillStyle = "#141033";
+        ctx.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 90; i++) {
+          const r = Math.random() * 1.8 + 0.4;
+          ctx.fillStyle = ["#fff", "#ffd9f2", "#a9c9ff"][i % 3];
+          ctx.beginPath();
+          ctx.arc(Math.random() * 256, Math.random() * 256, r, 0, 6.3);
+          ctx.fill();
+        }
+      },
+    },
+    aurora: {
+      rgb: [1, 1, 1],
+      emissive: 0.28,
+      pattern: (ctx) => {
+        for (let y = 0; y < 256; y += 4) {
+          const t = y / 256;
+          ctx.fillStyle = `hsl(${150 + Math.sin(t * 9.4) * 40}, 90%, ${38 + Math.sin(t * 15.7) * 14}%)`;
+          ctx.fillRect(0, y, 256, 4);
+        }
+      },
+    },
   };
   let skinBase = SKINS.core;
   const ballMat = makeMaterial("mBall", skinBase.rgb, skinBase.emissive);
+  const leadMat = new StandardMaterial("mLead", scene);
+  leadMat.diffuseColor = new Color3(0.42, 0.44, 0.5);
+  leadMat.specularColor = new Color3(0.6, 0.6, 0.65);
+  leadMat.emissiveColor = new Color3(0.06, 0.06, 0.08);
+  const skinTextures = new Map<string, DynamicTexture>();
+  function skinTexture(id: string): DynamicTexture | null {
+    const def = SKINS[id];
+    if (!def?.pattern) return null;
+    let t = skinTextures.get(id);
+    if (!t) {
+      t = new DynamicTexture(`skin-${id}`, 256, scene, false);
+      def.pattern(t.getContext() as CanvasRenderingContext2D);
+      t.update();
+      skinTextures.set(id, t);
+    }
+    return t;
+  }
   const ballMesh = MeshBuilder.CreateSphere("ball", { diameter: C.ballRadius * 2 }, scene);
   ballMesh.material = ballMat;
   ballMesh.parent = tower;
@@ -187,6 +246,10 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   const rings: Ring[] = [];
   let ballPulse = 0; // replaces camera shake (owner: shake reads as a glitch)
   let pendingHitStop = 0;
+  // AGILITY comet tail: fading ghost spheres dropped behind the ball.
+  let trailOn = false;
+  let trailClock = 0;
+  const trailBits: { mesh: Mesh; life: number }[] = [];
 
   function spawnShards(b: BlockDef, e: SimEvent): void {
     const base = toLocal(b.cx, b.cy, b.cz);
@@ -317,7 +380,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           const info = blockInfo.get(e.id);
           if (info) spawnShards(info, e);
           ballPulse = 1;
-          if (e.cascade) pendingHitStop = C.hitStopMs;
+          // No hit-stop on explosions (owner: repeated freezes read as
+          // jitter). Time effects are the sim-side slow-mo showcase only.
         } else if ((e.kind === "mine" || e.kind === "shield") && e.id !== undefined) {
           // Mine detonation: violent red burst; on a shield hit you survive it.
           const info = blockInfo.get(e.id);
@@ -419,6 +483,13 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     setSkin(id) {
       skinBase = SKINS[id] ?? SKINS.core;
       ballMat.diffuseColor.set(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2]);
+      ballMat.diffuseTexture = skinTexture(id);
+    },
+    setBallMode(mode) {
+      ballMesh.material = mode === "lead" ? leadMat : ballMat;
+    },
+    setTrail(on) {
+      trailOn = on;
     },
     jumpFx(b) {
       const ring = MeshBuilder.CreateDisc("jr", { radius: 55, tessellation: 28 }, scene);
@@ -479,8 +550,28 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
       // Ball pulse: the impact feedback that replaced camera shake.
       ballPulse *= 0.9;
-      const glowK = skinBase.emissive + ballPulse * 0.8;
+      const glowK = skinBase.emissive + ballPulse * 0.5;
       ballMat.emissiveColor.set(skinBase.rgb[0] * glowK, skinBase.rgb[1] * glowK, skinBase.rgb[2] * glowK);
+      // AGILITY comet tail.
+      trailClock += frameMs;
+      if (trailOn && trailClock > 26) {
+        trailClock = 0;
+        const bit = MeshBuilder.CreateSphere("tb", { diameter: C.ballRadius * 1.5, segments: 6 }, scene);
+        bit.material = ballMat;
+        bit.parent = tower;
+        bit.position = ballMesh.position.clone();
+        trailBits.push({ mesh: bit, life: 0.4 });
+      }
+      for (let i = trailBits.length - 1; i >= 0; i--) {
+        const t = trailBits[i];
+        t.life -= frameMs / 1000;
+        if (t.life <= 0) {
+          t.mesh.dispose();
+          trailBits.splice(i, 1);
+          continue;
+        }
+        t.mesh.scaling.setAll(Math.max(0.05, t.life / 0.4));
+      }
       // Mines pulse with menace; walls follow the endless fall.
       const menace = 0.6 + 0.35 * Math.sin(performance.now() / 180);
       MATS.mine.emissiveColor.set(0.9 * menace, 0.08 * menace, 0.1 * menace);

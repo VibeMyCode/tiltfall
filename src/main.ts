@@ -42,7 +42,16 @@ function save(key: string, value: unknown): void {
   }
 }
 let bank = load<number>("tf.bank", 0);
-let inventory = load<Record<BoosterId, number>>("tf.inv", { quake: 0, chain: 0, x2: 0, heavy: 0, bounce: 0, feather: 0 });
+const rawInv = load<Record<string, number>>("tf.inv", {});
+// Migration: bounce→shield, feather→agility (booster redesign 2026-09-02).
+const inventory: Record<BoosterId, number> = {
+  quake: rawInv.quake ?? 0,
+  chain: rawInv.chain ?? 0,
+  x2: rawInv.x2 ?? 0,
+  heavy: rawInv.heavy ?? 0,
+  shield: (rawInv.shield ?? 0) + (rawInv.bounce ?? 0),
+  agility: (rawInv.agility ?? 0) + (rawInv.feather ?? 0),
+};
 let best = load<{ score: number; depth: number }>("tf.best", { score: 0, depth: 0 });
 let level = load<number>("tf.level", 1);
 let skin = load<string>("tf.skin", "core");
@@ -228,6 +237,8 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     driveTarget = null;
   }
 
+  // Smooth slow-mo showcase for BOTH quake and chain cascades (no hit-stop —
+  // the ball glides while explosions bloom around it).
   const slowMo = sim.queue.length > 0 && sim.tick - sim.chainBlastTick < 720;
   if (hitStopMs > 0) {
     hitStopMs = Math.max(0, hitStopMs - frameMs);
@@ -259,8 +270,10 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     driveTarget ? { x: driveTarget.x, y: lastLandY, z: driveTarget.z } : null,
     path ? path.wallHit : false,
   );
+  renderer.setBallMode(sim.runOn.heavy ? "lead" : "skin");
+  renderer.setTrail(Boolean(sim.runOn.agility) && !sim.finished);
   renderer.frame(frameMs, lastTilt);
-  ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth);
+  ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth, sim.shields);
   ui.setJump(sim.jumpCd <= 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks);
   ui.setBoosterBar(inventory, sim.armed, sim.runOn);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;
