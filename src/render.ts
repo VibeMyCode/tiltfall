@@ -42,8 +42,7 @@ export interface Renderer {
   frame: (frameMs: number, tilt: { x: number; z: number }) => void;
   consumeHitStop: () => number;
   resetBlocks: () => void;
-  setAimPath: (points: { x: number; y: number; z: number }[] | null) => void;
-  setBallShadow: (b: { x: number; y: number; z: number }, groundY: number, visible: boolean) => void;
+  setAim: (points: { x: number; y: number; z: number }[] | null) => void;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): Renderer {
@@ -137,7 +136,6 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
   const shards: Shard[] = [];
   const rings: Ring[] = [];
-  let fovKick = 0;
   let ballPulse = 0; // replaces camera shake (owner: shake reads as a glitch)
   let pendingHitStop = 0;
 
@@ -240,34 +238,30 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   const camPos = new Vector3(C.spawn.x, -C.spawn.y + C.camHeight, C.spawn.z + C.camDist);
   const camAim = new Vector3(C.spawn.x, -C.spawn.y, C.spawn.z);
 
-  // Aim laser (owner design): thin red trajectory line, fading toward the
-  // tip. Fixed point count so the LinesMesh can be updated in place.
+  // Unified aim beacon (owner design): the dark disc marks the PREDICTED
+  // LANDING SPOT under the current steering, and a soft thread runs from the
+  // ball along the real trajectory down to the disc. One instrument: where
+  // the disc is, that is where you land.
   const N = C.laserPoints;
-  const laserPts: Vector3[] = Array.from({ length: N }, () => new Vector3(0, 0, 0));
-  const laserColors = Array.from({ length: N }, (_, i) => {
+  const threadPts: Vector3[] = Array.from({ length: N }, () => new Vector3(0, 0, 0));
+  const threadColors = Array.from({ length: N }, (_, i) => {
     const t = i / (N - 1);
-    return new Color4(1, 0.28, 0.22, 0.85 * (1 - t) * (1 - t));
+    return new Color4(0.75, 0.88, 1, 0.5 - 0.38 * t);
   });
-  let laser = MeshBuilder.CreateLines("laser", { points: laserPts, colors: laserColors, updatable: true }, scene);
-  laser.parent = tower;
-  laser.setEnabled(false);
+  let thread = MeshBuilder.CreateLines("aimThread", { points: threadPts, colors: threadColors, updatable: true }, scene);
+  thread.parent = tower;
+  thread.setEnabled(false);
 
-  // Position beacon (depth cue, owner issue: "can't feel the ball on the
-  // near/far axis"): a drop-shadow disc projected straight down onto the
-  // surface below, plus a faint plumb line from ball to disc.
-  const shadowDisc = MeshBuilder.CreateDisc("ballShadow", { radius: C.ballRadius * 1.05, tessellation: 28 }, scene);
-  const shadowMat = new StandardMaterial("mShadow", scene);
-  shadowMat.diffuseColor = new Color3(0, 0, 0);
-  shadowMat.specularColor = new Color3(0, 0, 0);
-  shadowMat.emissiveColor = new Color3(0, 0, 0);
-  shadowMat.alpha = 0.4;
-  shadowDisc.material = shadowMat;
-  shadowDisc.rotation.x = Math.PI / 2;
-  shadowDisc.parent = tower;
-  const plumbPts = [new Vector3(0, 0, 0), new Vector3(0, 0, 0)];
-  const plumbColors = [new Color4(0.7, 0.85, 1, 0.28), new Color4(0.7, 0.85, 1, 0.05)];
-  let plumb = MeshBuilder.CreateLines("plumb", { points: plumbPts, colors: plumbColors, updatable: true }, scene);
-  plumb.parent = tower;
+  const landDisc = MeshBuilder.CreateDisc("landDisc", { radius: C.ballRadius * 1.05, tessellation: 28 }, scene);
+  const landMat = new StandardMaterial("mLand", scene);
+  landMat.diffuseColor = new Color3(0, 0, 0);
+  landMat.specularColor = new Color3(0, 0, 0);
+  landMat.emissiveColor = new Color3(0, 0, 0);
+  landMat.alpha = 0.4;
+  landDisc.material = landMat;
+  landDisc.rotation.x = Math.PI / 2;
+  landDisc.parent = tower;
+  landDisc.setEnabled(false);
 
   return {
     engine,
@@ -282,7 +276,6 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           const info = blockInfo.get(e.id);
           if (info) spawnShards(info, e);
           ballPulse = 1;
-          fovKick = Math.min(0.08, fovKick + (e.cascade ? 0.04 : 0.02));
           if (e.cascade) pendingHitStop = C.hitStopMs;
         }
       }
@@ -295,29 +288,24 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     resetBlocks() {
       for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
     },
-    setBallShadow(b, groundY, visible) {
-      shadowDisc.setEnabled(visible);
-      plumb.setEnabled(visible);
-      if (!visible) return;
-      shadowDisc.position = toLocal(b.x, groundY - 3, b.z);
-      // Nearer ground → denser shadow (extra depth information for free).
-      const dist = Math.max(0, groundY - b.y);
-      shadowMat.alpha = 0.18 + 0.32 * (1 - Math.min(1, dist / 2600));
-      plumbPts[0].set(b.x - C.shaftW / 2, -b.y, b.z - C.shaftD / 2);
-      plumbPts[1].set(b.x - C.shaftW / 2, -(groundY - 3), b.z - C.shaftD / 2);
-      plumb = MeshBuilder.CreateLines("plumb", { points: plumbPts, instance: plumb });
-    },
-    setAimPath(points) {
+    setAim(points) {
       if (!points || points.length < 2 || !C.laserOn) {
-        laser.setEnabled(false);
+        thread.setEnabled(false);
+        landDisc.setEnabled(false);
         return;
       }
-      laser.setEnabled(true);
+      thread.setEnabled(true);
+      landDisc.setEnabled(true);
       for (let i = 0; i < N; i++) {
         const src = points[Math.min(i, points.length - 1)];
-        laserPts[i].set(src.x - C.shaftW / 2, -src.y, src.z - C.shaftD / 2);
+        threadPts[i].set(src.x - C.shaftW / 2, -src.y, src.z - C.shaftD / 2);
       }
-      laser = MeshBuilder.CreateLines("laser", { points: laserPts, instance: laser });
+      thread = MeshBuilder.CreateLines("aimThread", { points: threadPts, instance: thread });
+      const land = points[points.length - 1];
+      landDisc.position = toLocal(land.x, land.y - 3, land.z);
+      // Nearer landing → denser disc (height reads for free).
+      const dist = Math.max(0, land.y - points[0].y);
+      landMat.alpha = 0.2 + 0.3 * (1 - Math.min(1, dist / 2600));
     },
     frame(frameMs, tilt) {
       updateEffects(frameMs / 1000);
@@ -342,8 +330,6 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       // Fog tracks the camera zoom — zooming out must never drown the tower.
       scene.fogStart = C.fogStart * zoom;
       scene.fogEnd = C.fogEnd * zoom;
-      fovKick *= 0.9;
-      camera.fov = C.camFov + fovKick;
       const gx = p.x;
       const gy = p.y + C.camHeight * zoom;
       const gz = p.z + C.camDist * zoom;

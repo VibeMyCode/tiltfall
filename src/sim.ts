@@ -198,16 +198,23 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   return events;
 }
 
-// Aim-laser trajectory: the SAME integrator and wall maths as step(),
-// ignoring blocks — the ball's real flight path under the current (held)
-// tilt, sampled for ~laserLen of descent. Render-only consumer; never
-// mutates state.
+// Aim trajectory: the SAME integrator and wall maths as step(), ignoring
+// blocks — the ball's real flight path under the current (held) tilt, down
+// to the next tier plane (or the floor). The LAST point is the predicted
+// landing spot. Render-only consumer; never mutates state.
 export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: number; y: number; z: number }[] {
   const C = CONFIG;
+  let target: number = C.floorY;
+  for (let t = 0; t < C.tierCount; t++) {
+    const planeY = C.firstTierTopY + t * C.tierSpacing + C.blockH;
+    if (planeY - 10 > s.ball.y + C.ballRadius) {
+      target = planeY;
+      break;
+    }
+  }
   const pts: { x: number; y: number; z: number }[] = [];
   let { x, y, z, vx, vy, vz } = s.ball;
-  const startY = y;
-  for (let i = 0; i < 360; i++) {
+  for (let i = 0; i < 600; i++) {
     vx += C.g0 * C.kTilt * tiltX * C.dt;
     vy += C.g0 * C.dt;
     vz += C.g0 * C.kTilt * tiltZ * C.dt;
@@ -240,35 +247,11 @@ export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: num
       z = C.shaftD - C.ballRadius;
       vz = -vz * C.wallRestitution;
     }
-    if (i % 4 === 0) pts.push({ x, y, z });
-    if (y - startY > C.laserLen || y + C.ballRadius >= C.floorY) break;
-  }
-  return pts;
-}
-
-// Straight-down projection for the ball's position beacon (drop shadow):
-// the highest un-broken block top OR the next rest plane directly below.
-// Render-only consumer; never mutates state.
-export function projectDown(s: SimState): { y: number; onBlock: boolean } {
-  const C = CONFIG;
-  const b = s.ball;
-  let best: number = C.floorY;
-  for (let t = 0; t < C.tierCount; t++) {
-    const planeY = C.firstTierTopY + t * C.tierSpacing + C.blockH;
-    if (planeY > b.y + C.ballRadius) {
-      best = planeY;
+    if (i % 5 === 0) pts.push({ x, y, z });
+    if (y + C.ballRadius >= target) {
+      pts.push({ x, y: target, z }); // the landing spot — always the last point
       break;
     }
   }
-  let onBlock = false;
-  for (const blk of s.blocks) {
-    if (blk.broken) continue;
-    const top = blk.cy - blk.hy;
-    if (top <= b.y || top >= best) continue;
-    if (Math.abs(b.x - blk.cx) <= blk.hx && Math.abs(b.z - blk.cz) <= blk.hz) {
-      best = top;
-      onBlock = true;
-    }
-  }
-  return { y: best, onBlock };
+  return pts;
 }

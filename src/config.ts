@@ -66,12 +66,12 @@ export const CONFIG = {
   maxVisualTiltDeg: 0,
   camAimAheadY: 380, // camera looks this far BELOW the ball — see what's coming
 
-  // Aim laser (owner design): a thin red real-trajectory line fading toward
-  // its tip, ~half a tier gap long. Future monetization slot: sellable /
-  // reward-activated booster; for development it is always on.
+  // Aim beacon (owner design): a soft trajectory thread from the ball down
+  // to a dark landing disc — the disc IS the predicted landing spot under
+  // current steering. Future monetization slot: sellable / reward-activated
+  // booster; for development it is always on.
   laserOn: true,
-  laserLen: 1000,
-  laserPoints: 28,
+  laserPoints: 30,
 
   // Camera.
   camHeight: 1500,
