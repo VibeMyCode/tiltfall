@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const DETERMINISTIC_FILES = ["sim.ts", "levelgen.ts", "rng.ts", "config.ts"];
+const DETERMINISTIC_FILES = ["sim.ts", "levelgen.ts", "rng.ts", "config.ts", "cards.ts"];
 const BANNED =
   /Math\.random|Date\.|performance\.now|Math\.(sin|cos|tan|atan2?|asin|acos|pow|exp|log2?|log10|cbrt|sinh|cosh|tanh)\b/;
 

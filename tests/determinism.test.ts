@@ -2,8 +2,9 @@
 // state checksums every 120 ticks across 2400 ticks (includes breaks,
 // cascades, wall bounces and the finish).
 import { describe, expect, it } from "vitest";
+import { gateOffers } from "../src/cards";
 import { buildTower } from "../src/levelgen";
-import { createSim, step } from "../src/sim";
+import { applyCard, createSim, step } from "../src/sim";
 
 // Scripted input log: pure function of tick — swings the tilt around enough
 // to hit walls, blocks and open gaps.
@@ -20,7 +21,11 @@ function runAndChecksum(seed: number, ticks: number): { sums: number[]; score: n
   const sums: number[] = [];
   for (let t = 0; t < ticks; t++) {
     const inp = scriptedInput(t);
-    step(sim, inp.x, inp.z);
+    const events = step(sim, inp.x, inp.z);
+    // Replay protocol: gates are answered with the second offer, instantly.
+    for (const e of events) {
+      if (e.kind === "gate" && e.gateIndex !== undefined) applyCard(sim, gateOffers(seed, e.gateIndex)[1]);
+    }
     if (t % 120 === 0) {
       sums.push(sim.ball.x * 31 + sim.ball.y * 7 + sim.ball.z * 13 + sim.score * 97 + sim.broken * 991);
     }

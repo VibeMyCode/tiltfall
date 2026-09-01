@@ -5,7 +5,7 @@
 import { CONFIG } from "./config";
 import { stream } from "./rng";
 
-export type BlockType = "glass" | "stone" | "bomb";
+export type BlockType = "glass" | "stone" | "bomb" | "bumper" | "spike";
 
 // One axis-aligned segment of a piece. Ascending id = §3.3 contact order.
 export interface BlockDef {
@@ -20,8 +20,8 @@ export interface BlockDef {
   hx: number; // half extents
   hy: number;
   hz: number;
-  threshold: number;
-  deps: number[]; // bombs: groupIds within blastRadius, near-to-far (the ripple)
+  threshold: number; // unbreakables (bumper/spike): Infinity
+  deps: number[]; // reserved — bomb blasts are resolved at runtime (§4.2 note)
 }
 
 // Piece templates as cell rectangles [r0, c0, rows, cols] — an L is a bar +
@@ -79,9 +79,20 @@ export function buildTower(seed: number): BlockDef[] {
         hx: (cols * C.cell) / 2,
         hy: h / 2,
         hz: (rows * C.cell) / 2,
-        threshold: C.thresholds[type],
+        threshold: C.thresholds[type] ?? Infinity,
         deps,
       });
+    };
+    const placeSingle = (type: BlockType, h: number): boolean => {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const r = Math.floor(rng() * C.gridN);
+        const c = Math.floor(rng() * C.gridN);
+        if (!free(r, c, 1, 1)) continue;
+        claim(r, c, 1, 1);
+        segment(nextGroup++, type, true, 1, r, c, 1, 1, h, []);
+        return true;
+      }
+      return false;
     };
 
     // 1. The BOMB (guaranteed, one per tier): tier 0 sits under the spawn so
@@ -91,7 +102,6 @@ export function buildTower(seed: number): BlockDef[] {
     const sr = tier === 0 ? 4 : 2 + Math.floor(rng() * 4);
     const sc = tier === 0 ? 4 : 2 + Math.floor(rng() * 4);
     const bombGroup = nextGroup++;
-    const bombSegIndex = out.length; // patched with deps in step 4
     claim(sr, sc, 1, 1);
     segment(bombGroup, "bomb", true, 1, sr, sc, 1, 1, 50, []);
     if (tier === 0) {
@@ -143,23 +153,87 @@ export function buildTower(seed: number): BlockDef[] {
       }
     }
 
-    // 4. Arm the bomb: every OTHER group on this tier whose nearest segment
-    // center is within blastRadius, ordered near-to-far (the ripple).
-    const bombSeg = out[bombSegIndex];
-    const tierSegs = out.filter((b) => b.groupId >= tier * 1000 && b.groupId < (tier + 1) * 1000);
-    const groupDist = new Map<number, number>();
-    for (const b of tierSegs) {
-      if (b.groupId === bombGroup) continue;
-      const dx = b.cx - bombSeg.cx;
-      const dz = b.cz - bombSeg.cz;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      const prev = groupDist.get(b.groupId);
-      if (prev === undefined || d < prev) groupDist.set(b.groupId, d);
+    // 4. Unbreakables (§4.1): bumpers launch, spikes punish. None on tier 0.
+    if (tier > 0) {
+      placeSingle("bumper", 50);
+      if (rng() < 0.5) placeSingle("bumper", 50);
+      if (rng() < 0.6) placeSingle("spike", 40);
+      if (tier >= 3 && rng() < 0.5) placeSingle("spike", 40);
+    } else {
+      placeSingle("bumper", 50);
     }
-    bombSeg.deps = [...groupDist.entries()]
-      .filter(([, d]) => d <= C.blastRadius)
-      .sort((a, b) => a[1] - b[1] || a[0] - b[0])
-      .map(([g]) => g);
   }
   return out;
+}
+
+// Deterministic probe input (§4.3): 16 scripted tilt patterns, no trig.
+export function probeTilt(pattern: number, tick: number): { x: number; z: number } {
+  const COMPASS = [
+    [0.6, 0],
+    [-0.6, 0],
+    [0, 0.6],
+    [0, -0.6],
+    [0.42, 0.42],
+    [0.42, -0.42],
+    [-0.42, 0.42],
+    [-0.42, -0.42],
+  ];
+  if (pattern < 8) return { x: COMPASS[pattern][0], z: COMPASS[pattern][1] };
+  if (pattern < 12) {
+    // zig-zag: compass direction flipping every 2 s
+    const base = COMPASS[(pattern - 8) * 2];
+    const flip = (tick >> 8) & 1 ? -1 : 1;
+    return { x: base[0] * flip, z: base[1] * flip };
+  }
+  if (pattern < 14) {
+    // square "spiral": cycle the 4 cardinal directions every second
+    const dir = COMPASS[((tick >> 7) + (pattern - 12) * 2) % 4];
+    return { x: dir[0], z: dir[1] };
+  }
+  if (pattern === 14) return { x: 0, z: 0 };
+  return { x: 0.7, z: 0.7 };
+}
+
+
+// Probe validation + par (§4.3): 16 scripted descents through the REAL sim
+// with pity disabled and first-offer card picks. A tower passes when >= 80%
+// of probes clear every tier within the per-tier tick limit and finish.
+import { applyCard, createSim, step } from "./sim";
+import { gateOffers } from "./cards";
+
+export interface TowerValidation {
+  ok: boolean;
+  passed: number;
+  parTicks: number;
+}
+
+export function validateTower(seed: number, layout: BlockDef[]): TowerValidation {
+  const C = CONFIG;
+  const limit = C.probeTierTickLimit;
+  const maxTicks = limit * C.tierCount;
+  const finishTicks: number[] = [];
+  let passed = 0;
+  for (let p = 0; p < 16; p++) {
+    const sim = createSim(layout, { pityDisabled: true });
+    let lastGateTick = 0;
+    let tierOk = true;
+    while (sim.tick < maxTicks && !sim.finished) {
+      const t = probeTilt(p, sim.tick);
+      const events = step(sim, t.x, t.z);
+      for (const e of events) {
+        if (e.kind === "gate" && e.gateIndex !== undefined) {
+          if (sim.tick - lastGateTick > limit) tierOk = false;
+          lastGateTick = sim.tick;
+          applyCard(sim, gateOffers(seed, e.gateIndex)[0]);
+        }
+      }
+    }
+    if (sim.finished && tierOk && sim.finishTick - lastGateTick <= limit) {
+      passed++;
+      finishTicks.push(sim.finishTick);
+    }
+  }
+  finishTicks.sort((a, b) => a - b);
+  const median = finishTicks.length ? finishTicks[Math.floor(finishTicks.length / 2)] : 0;
+  return { ok: passed >= 13, passed, parTicks: Math.floor(median * 0.9) };
 }

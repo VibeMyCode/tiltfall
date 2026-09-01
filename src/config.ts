@@ -39,9 +39,49 @@ export const CONFIG = {
   points: { glass: 10, stone: 25, bomb: 30 } as Record<string, number>,
 
   // Cascade (§4.2): a BOMB (yellow) breaks every piece whose center is within
-  // blastRadius, rippling outward with the step delay.
+  // blastRadius, rippling outward with the step delay. The blast is resolved
+  // at RUNTIME (deterministically) so cards can widen it.
   cascadeStepTicks: 10,
   blastRadius: 240,
+
+  // Draft gates (§3.4): after tiers 1..4 the ball is captured, the sim
+  // freezes and the player picks 1 of 3 cards. Wall-clock never counts.
+  gateCaptureTicks: 30,
+  gateDepthBelowTier: 500, // gate plane sits this far under a tier's base
+  gateDropSpeed: 900,
+  draftSeconds: 3,
+
+  // Card effects (all consumed via cardParams — never scattered ifs).
+  cards: {
+    heavyMassMul: 1.45,
+    heavyTiltMul: 0.8,
+    featherTiltMul: 1.4,
+    featherMassMul: 0.75,
+    chainBlastMul: 1.6,
+    pogoBounce: 0.55,
+    bouncyRestAdd: 0.25,
+    pierceCount: 6,
+    surgeWindowMul: 2,
+    shockBaseCells: 1,
+    shockChainPer: 15, // +1 cell of shockwave radius per this many combo-chain breaks
+    shockDelayTicks: 6,
+  },
+
+  // Unbreakables (§4.1).
+  bumperRestitution: 1.35,
+  bumperPoints: 5,
+  spikeSlow: 0.85,
+
+  // Anti-stall (§3.2): deterministic nudge toward the nearest open cell, and
+  // the tier pity-shatter.
+  stallTicks: 180, // 1.5 s below restSpeed while not on the floor
+  nudgeImpulse: 460,
+  pityTicks: 5400, // 45 s on one tier → the rest of it auto-shatters
+
+  // Levelgen probe validation (§4.3): probes with pity disabled; each tier
+  // must clear in under this many ticks for >= 80% of probes.
+  probeTierTickLimit: 4800, // 40 s
+  parScaleTicks: 12, // finish bonus = (parTicks - finishTicks) / this
 
   // Combo & scoring (§3.5). Window/timer are in ticks.
   comboWindowTicks: 300, // 2.5 s
@@ -49,7 +89,6 @@ export const CONFIG = {
 
   // Run end: ball resting on the floor.
   restSpeed: 100,
-  restTicks: 45,
 
   // Tilt input (§3.1). Screen-space signs set by LOOKING at the running game
   // (with the static world the camera faces -Z, so screen-right is world -X).

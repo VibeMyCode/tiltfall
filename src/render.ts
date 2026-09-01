@@ -117,6 +117,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     glass: makeMaterial("mGlass", [0.3, 0.75, 0.95], 0.25, 0.62),
     stone: makeMaterial("mStone", [0.45, 0.47, 0.55], 0.1),
     bomb: makeMaterial("mBomb", [1.0, 0.62, 0.12], 0.7),
+    bumper: makeMaterial("mBumper", [0.25, 0.95, 0.55], 0.45),
+    spike: makeMaterial("mSpike", [0.75, 0.2, 0.25], 0.3),
   };
   const glassShardMat = makeMaterial("mGlassShard", [0.55, 0.85, 1.0], 0.5, 0.75);
   glassShardMat.backFaceCulling = false;
@@ -285,6 +287,19 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           if (info) spawnShards(info, e);
           ballPulse = 1;
           if (e.cascade) pendingHitStop = C.hitStopMs;
+        } else if (e.kind === "bumper" && e.id !== undefined) {
+          const info = blockInfo.get(e.id);
+          if (info) {
+            const ring = MeshBuilder.CreateDisc("ring", { radius: 70, tessellation: 32 }, scene);
+            const rmat = makeMaterial(`rb${e.id}-${performance.now()}`, [0.3, 1, 0.6], 1);
+            rmat.alpha = 0.6;
+            ring.material = rmat;
+            ring.rotation.x = Math.PI / 2;
+            ring.position = toLocal(info.cx, info.cy - info.hy - 4, info.cz);
+            ring.parent = tower;
+            rings.push({ mesh: ring, mat: rmat, life: 0.35 });
+          }
+          ballPulse = Math.max(ballPulse, 0.7);
         }
       }
     },

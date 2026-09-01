@@ -19,11 +19,17 @@ banned-API source grep, smoke. Headless-verified: cascade, steering by pointer A
 keyboard, full descent → results → replay, portrait framing, median 60 fps, zero
 console errors.
 
-**Left:** M2 (full §4.3 levelgen with probes/spikes/bumpers/crystals, §4.2 cascade
-graphs everywhere, draft gates + 8 cards, anti-stall), then M3 meta / M4 daily+ghost /
+**M2 done:** draft gates (§3.4 — ball captured after each tier, sim frozen, 3-card
+draft with countdown/auto-pick, keys 1-2-3), 8 cards via cards.ts/cardParams (magnet
+deferred to M3 crystals; Pogo added), runtime bomb blasts (card-scalable), bumpers +
+spikes, anti-stall nudge + tier pity-shatter, §4.3 probe validation (16 scripted
+descents, par → finish bonus). Finish = floor touch (§3.2). 15 unit tests green;
+headless suite covers gates end-to-end.
+
+**Left:** M3 meta (save, crystals, upgrade track, Free Fall, quests) / M4 daily+ghost /
 M5 polish.
 
-**Next:** M2 — draft gates and the card system.
+**Next:** owner playtest of M2 cards, then M3.
 
 ### Milestones (from SPEC.md §11)
 

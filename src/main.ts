@@ -2,8 +2,9 @@
 // guidance): gameplay advances ONLY through sim.step.
 import "./style.css";
 import { CONFIG } from "./config";
-import { buildTower } from "./levelgen";
-import { createSim, predictPath, step, type SimState } from "./sim";
+import { gateOffers } from "./cards";
+import { buildTower, validateTower } from "./levelgen";
+import { applyCard, createSim, predictPath, step, type SimState } from "./sim";
 import { attachInput } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
@@ -14,17 +15,18 @@ const MAX_FRAME_MS = 100;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const layout = buildTower(M1_SEED);
-let sim: SimState = createSim(layout);
+// Probe validation + par (§4.3) — runs the real sim 16 times at boot.
+const validation = validateTower(M1_SEED, layout);
+console.info(`[tiltfall] tower validation: ${validation.passed}/16 probes, par ${(validation.parTicks * CONFIG.dt).toFixed(1)}s`);
+let sim: SimState = createSim(layout, { parTicks: validation.parTicks });
 const input = attachInput(canvas);
 const renderer = createRenderer(canvas, layout);
-const ui = createUI(
-  () => {
-    sim = createSim(layout);
-    renderer.resetBlocks();
-    ui.hideResults();
-  },
-  { get: () => input.invertY(), toggle: () => input.toggleInvertY() },
-);
+const newRun = () => {
+  sim = createSim(layout, { parTicks: validation.parTicks });
+  renderer.resetBlocks();
+  ui.hideResults();
+};
+const ui = createUI(newRun, { get: () => input.invertY(), toggle: () => input.toggleInvertY() });
 
 let accumulator = 0;
 let hitStopMs = 0;
@@ -75,8 +77,8 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     driveTarget = null;
   }
 
-  if (hitStopMs > 0) {
-    hitStopMs -= frameMs; // sim holds its breath; shards keep flying
+  if (hitStopMs > 0 || ui.isDraftOpen()) {
+    hitStopMs = Math.max(0, hitStopMs - frameMs); // sim frozen; wall time never counts
   } else {
     accumulator += frameMs;
   }
@@ -87,14 +89,22 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     if (events.length) {
       renderer.applyEvents(events);
       hitStopMs = Math.max(hitStopMs, renderer.consumeHitStop());
-      if (events.some((e) => e.kind === "finish")) {
-        ui.showResults({
-          timeS: sim.finishTick * CONFIG.dt,
-          score: sim.score,
-          broken: sim.broken,
-          maxCombo: sim.maxCombo,
-        });
+      for (const e of events) {
+        if (e.kind === "gate" && e.gateIndex !== undefined) {
+          const idx = e.gateIndex;
+          ui.showDraft(gateOffers(M1_SEED, idx), (card) => applyCard(sim, card));
+          accumulator = 0;
+        } else if (e.kind === "finish") {
+          ui.showResults({
+            timeS: sim.finishTick * CONFIG.dt,
+            score: sim.score,
+            broken: sim.broken,
+            maxCombo: sim.maxCombo,
+            parBonus: sim.parBonus,
+          });
+        }
       }
+      if (ui.isDraftOpen()) break;
     }
     accumulator -= DT_MS;
   }
@@ -134,6 +144,24 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   },
   get tilt() {
     return lastTilt;
+  },
+  get gateOpen() {
+    return ui.isDraftOpen();
+  },
+  get tick() {
+    return sim.tick;
+  },
+  get steerable() {
+    return !ui.isDraftOpen() && sim.gatePhase === "none" && !sim.finished;
+  },
+  get gatesPassed() {
+    return sim.gatesPassed;
+  },
+  get card() {
+    return sim.activeCard;
+  },
+  pick(i: number) {
+    ui.pickDraft(i);
   },
   setTilt(x: number, z: number) {
     input.setForced({ x, z });
