@@ -34,7 +34,9 @@ const SHAPES: { rects: number[][]; cells: number }[] = [
   { rects: [[0, 0, 2, 1], [1, 1, 1, 1]], cells: 3 }, // L
   { rects: [[0, 0, 1, 3], [1, 0, 1, 1], [1, 2, 1, 1]], cells: 5 }, // П
 ];
-const HEIGHTS = [20, 40, 50]; // flat plate / normal / tall (owner sizing)
+// Height is part of the material language (owner): glass = thin panes,
+// stone = chunky cubes, specials in between.
+const typeHeight = (t: BlockType): number => (t === "glass" ? 20 : t === "stone" ? 60 : 50);
 
 export function buildTower(seed: number): BlockDef[] {
   const C = CONFIG;
@@ -129,7 +131,7 @@ export function buildTower(seed: number): BlockDef[] {
         const fits = shape.rects.every(([rr, cc, rows, cols]) => free(r0 + rr, c0 + cc, rows, cols));
         if (!fits) continue;
         const type: BlockType = rng() < 0.45 ? "stone" : "glass";
-        const h = HEIGHTS[Math.floor(rng() * HEIGHTS.length)];
+        const h = typeHeight(type);
         const g = nextGroup++;
         shape.rects.forEach(([rr, cc, rows, cols], i) => {
           claim(r0 + rr, c0 + cc, rows, cols);
@@ -149,10 +151,9 @@ export function buildTower(seed: number): BlockDef[] {
         const p = border ? 0.42 : 0.3;
         if (occupied[r * C.gridN + c] || rng() >= p) continue;
         const type: BlockType = rng() < stoneP ? "stone" : "glass";
-        const h = HEIGHTS[Math.floor(rng() * HEIGHTS.length)];
         const g = nextGroup++;
         claim(r, c, 1, 1);
-        segment(g, type, true, 1, r, c, 1, 1, h, []);
+        segment(g, type, true, 1, r, c, 1, 1, typeHeight(type), []);
       }
     }
 

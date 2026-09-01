@@ -2,7 +2,7 @@
 // no Date, no transcendentals. Same layout + same input log + same booster
 // activations ⇒ same run. No mid-run interruptions (owner: gates removed).
 import { CONFIG } from "./config";
-import { boosterParams, type BoosterId } from "./boosters";
+import { BOOSTER_MODE, type BoosterId } from "./boosters";
 import type { BlockDef } from "./levelgen";
 
 export interface SimBlock extends BlockDef {
@@ -32,7 +32,9 @@ export interface SimState {
   broken: number;
   finished: boolean;
   finishTick: number;
-  boosterTimers: Partial<Record<BoosterId, number>>;
+  armed: Partial<Record<BoosterId, boolean>>; // one-shot boosters, waiting to fire
+  runOn: Partial<Record<BoosterId, boolean>>; // run-long boosters (x2, feather)
+  chainBlastTick: number; // last chain-bomb consumption (drives the slow-mo showcase)
   tierEnterTick: number;
   currentTier: number;
   pityDisabled: boolean;
@@ -53,7 +55,9 @@ export function createSim(layout: BlockDef[], opts?: { pityDisabled?: boolean })
     broken: 0,
     finished: false,
     finishTick: 0,
-    boosterTimers: {},
+    armed: {},
+    runOn: {},
+    chainBlastTick: -1e9,
     tierEnterTick: 0,
     currentTier: 0,
     pityDisabled: opts?.pityDisabled ?? false,
@@ -61,8 +65,11 @@ export function createSim(layout: BlockDef[], opts?: { pityDisabled?: boolean })
 }
 
 // Activate an owned booster (main handles inventory; replay logs (tick, id)).
+// Impact boosters ARM (fire once on the next matching hit); x2/feather stay
+// on until the run ends.
 export function activateBooster(s: SimState, id: BoosterId): void {
-  s.boosterTimers[id] = CONFIG.boosterTicks;
+  if (BOOSTER_MODE[id] === "armed") s.armed[id] = true;
+  else s.runOn[id] = true;
 }
 
 const tierBaseY = (tier: number): number => CONFIG.firstTierTopY + tier * CONFIG.tierSpacing + CONFIG.blockH;
@@ -87,7 +94,7 @@ function queueBlast(s: SimState, cx: number, cy: number, cz: number, radius: num
 }
 
 function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimEvent[]): void {
-  const P = boosterParams(s.boosterTimers);
+  const B = CONFIG.boosters;
   let any = false;
   for (const b of s.blocks) {
     if (b.groupId !== groupId || b.broken) continue;
@@ -104,11 +111,21 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
       s.comboChain++;
       s.maxCombo = Math.max(s.maxCombo, s.combo);
       s.lastBreakTick = s.tick;
-      s.score += (CONFIG.points[b.type] ?? 0) * b.cells * s.combo * P.scoreMul;
+      const scoreMul = s.runOn.x2 ? B.x2.scoreMul : 1;
+      s.score += (CONFIG.points[b.type] ?? 0) * b.cells * s.combo * scoreMul;
       if (b.type === "bomb") {
-        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * P.blastMul, CONFIG.cascadeStepTicks);
-      } else if (!cascade && P.quakeCells > 0) {
-        queueBlast(s, b.cx, b.cy, b.cz, P.quakeCells * CONFIG.cell, 6);
+        // CHAIN BOMB (one-shot): this bomb mega-chains, in slow motion.
+        const mul = s.armed.chain ? B.chain.blastMul : 1;
+        if (s.armed.chain) {
+          s.armed.chain = false;
+          s.chainBlastTick = s.tick;
+        }
+        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * mul, CONFIG.cascadeStepTicks);
+      }
+      if (!cascade && s.armed.quake) {
+        // QUAKE (one-shot): this smash levels a huge area.
+        s.armed.quake = false;
+        queueBlast(s, b.cx, b.cy, b.cz, B.quake.blastCells * CONFIG.cell, 6);
       }
     }
   }
@@ -125,7 +142,6 @@ function processQueue(s: SimState, events: SimEvent[]): void {
 
 function resolveBlocks(s: SimState, events: SimEvent[]): void {
   const { ball } = s;
-  const P = boosterParams(s.boosterTimers);
   const r = CONFIG.ballRadius;
   for (const b of s.blocks) {
     if (b.broken) continue;
@@ -141,28 +157,47 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
     const pz = hz - Math.abs(dz);
     const axis: "x" | "y" | "z" = px <= py && px <= pz ? "x" : py <= pz ? "y" : "z";
     const vAxis = axis === "x" ? ball.vx : axis === "y" ? ball.vy : ball.vz;
-    const j = Math.round((Math.abs(vAxis) * CONFIG.ballMass * P.massMul) / CONFIG.impulseScale);
+    const j = Math.round((Math.abs(vAxis) * CONFIG.ballMass) / CONFIG.impulseScale);
     const dmg = (s.groupDamage[b.groupId] ?? 0) + j;
     const breakable = b.threshold !== Infinity;
-    if (breakable && dmg >= b.threshold) {
+    // HEAVY (one-shot): the next hit breaks ANY breakable piece instantly.
+    const heavySmash = breakable && s.armed.heavy;
+    if (breakable && (dmg >= b.threshold || heavySmash)) {
+      if (heavySmash) s.armed.heavy = false;
       breakGroup(s, b.groupId, false, events);
-      if (axis === "y" && vAxis > 0) ball.vy = -ball.vy * P.breakBounce;
-      else if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
+      if (axis === "y" && vAxis > 0) {
+        // BOUNCE (one-shot): this smash launches you up like a bumper.
+        if (s.armed.bounce) {
+          s.armed.bounce = false;
+          ball.vy = -CONFIG.bumperMinLaunch;
+        } else {
+          ball.vy = -ball.vy * CONFIG.breakBounce;
+        }
+      } else if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
       else if (axis === "y") ball.vy *= CONFIG.breakThroughLoss;
       else ball.vz *= CONFIG.breakThroughLoss;
       continue;
     }
     if (breakable) s.groupDamage[b.groupId] = dmg;
     if (b.type === "spike") {
-      // Impaled (owner): the ball stops dead on a spike; combo dies with it.
-      ball.x = b.cx + Math.sign(dx || 1) * (axis === "x" ? hx : Math.abs(dx));
-      if (axis === "y") ball.y = b.cy + Math.sign(dy) * hy;
-      ball.vx *= CONFIG.spikeStop;
-      ball.vy = axis === "y" ? -ball.vy * CONFIG.spikeStop : ball.vy * CONFIG.spikeStop;
-      ball.vz *= CONFIG.spikeStop;
-      s.combo = 1;
-      s.comboChain = 0;
-      events.push({ kind: "spike", id: b.id });
+      // Impale ONCE on a fast hit (dead stop, combo dies); afterwards the
+      // ball may slowly roll off under tilt — never a permanent trap.
+      if (axis === "x") ball.x = b.cx + Math.sign(dx) * hx;
+      else if (axis === "y") ball.y = b.cy + Math.sign(dy) * hy;
+      else ball.z = b.cz + Math.sign(dz) * hz;
+      if (Math.abs(vAxis) > 300) {
+        ball.vx *= CONFIG.spikeStop;
+        ball.vy *= CONFIG.spikeStop;
+        ball.vz *= CONFIG.spikeStop;
+        s.combo = 1;
+        s.comboChain = 0;
+        events.push({ kind: "spike", id: b.id });
+      } else {
+        // resting on the spikes: soft contact, tilt can drag the ball off
+        if (axis === "x") ball.vx = -ball.vx * 0.1;
+        else if (axis === "y") ball.vy = -ball.vy * 0.1;
+        else ball.vz = -ball.vz * 0.1;
+      }
       continue;
     }
     const rest = b.type === "bumper" ? CONFIG.bumperRestitution : CONFIG.blockRestitution;
@@ -197,7 +232,12 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
 // for pityTicks auto-shatters, spectacularly.
 function pity(s: SimState, events: SimEvent[]): void {
   const C = CONFIG;
-  const tier = Math.max(0, Math.min(C.tierCount - 1, Math.floor((s.ball.y - C.firstTierTopY) / C.tierSpacing)));
+  // Bias DOWN so a ball resting ON a tier's blocks is attributed to THAT
+  // tier (owner bug report: pity was shattering the tier above).
+  const tier = Math.max(
+    0,
+    Math.min(C.tierCount - 1, Math.floor((s.ball.y + C.tierAttributionBias - C.firstTierTopY) / C.tierSpacing)),
+  );
   if (tier !== s.currentTier) {
     s.currentTier = tier;
     s.tierEnterTick = s.tick;
@@ -217,16 +257,12 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   const events: SimEvent[] = [];
   if (s.finished) return events;
   s.tick++;
-  for (const k of Object.keys(s.boosterTimers) as BoosterId[]) {
-    const v = s.boosterTimers[k];
-    if (v !== undefined && v > 0) s.boosterTimers[k] = v - 1;
-  }
   const { ball } = s;
   const C = CONFIG;
-  const P = boosterParams(s.boosterTimers);
-  ball.vx += C.g0 * C.kTilt * P.kTiltMul * tiltX * C.dt;
+  const kTiltMul = s.runOn.feather ? C.boosters.feather.tiltMul : 1;
+  ball.vx += C.g0 * C.kTilt * kTiltMul * tiltX * C.dt;
   ball.vy += C.g0 * C.dt;
-  ball.vz += C.g0 * C.kTilt * P.kTiltMul * tiltZ * C.dt;
+  ball.vz += C.g0 * C.kTilt * kTiltMul * tiltZ * C.dt;
   ball.vx *= C.drag;
   ball.vy *= C.drag;
   ball.vz *= C.drag;
@@ -287,14 +323,14 @@ export function predictPath(
 ): { points: { x: number; y: number; z: number }[]; wallHit: boolean } {
   const C = CONFIG;
   const WALL_CUT_SPEED = 150;
-  const P = boosterParams(s.boosterTimers);
+  const kTiltMul = s.runOn.feather ? C.boosters.feather.tiltMul : 1;
   const pts: { x: number; y: number; z: number }[] = [];
   let wallHit = false;
   let { x, y, z, vx, vy, vz } = s.ball;
   outer: for (let i = 0; i < 900; i++) {
-    vx += C.g0 * C.kTilt * P.kTiltMul * tiltX * C.dt;
+    vx += C.g0 * C.kTilt * kTiltMul * tiltX * C.dt;
     vy += C.g0 * C.dt;
-    vz += C.g0 * C.kTilt * P.kTiltMul * tiltZ * C.dt;
+    vz += C.g0 * C.kTilt * kTiltMul * tiltZ * C.dt;
     vx *= C.drag;
     vy *= C.drag;
     vz *= C.drag;

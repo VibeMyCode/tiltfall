@@ -10,7 +10,11 @@ export interface ShopModel {
 
 export interface UI {
   setHud: (timeS: number, score: number, combo: number) => void;
-  setBoosterBar: (inventory: Record<BoosterId, number>, timers: Partial<Record<BoosterId, number>>) => void;
+  setBoosterBar: (
+    inventory: Record<BoosterId, number>,
+    armed: Partial<Record<BoosterId, boolean>>,
+    runOn: Partial<Record<BoosterId, boolean>>,
+  ) => void;
   showResults: (r: {
     timeS: number;
     score: number;
@@ -65,8 +69,9 @@ export function createUI(
       <div class="results-row"><span>Blocks smashed</span><b id="res-broken">0</b></div>
       <div class="results-row"><span>Best combo</span><b id="res-combo">×1</b></div>
       <div class="results-row res-best"><span>Best score / combo</span><b id="res-best">0 / ×1</b></div>
+      <div class="results-row res-bank"><span>Run score → BANK</span><b id="res-bank">0</b></div>
       <div class="shop">
-        <div class="shop-head">BOOSTER SHOP <span class="bank" id="shop-bank">0</span></div>
+        <div class="shop-head">BOOSTER SHOP · spend your BANK <span class="bank" id="shop-bank">0</span></div>
         <div class="shop-grid" id="shop-grid"></div>
       </div>
       <button id="res-replay">DROP AGAIN</button>
@@ -81,6 +86,7 @@ export function createUI(
   function renderShop(): void {
     if (!shopModel) return;
     el("shop-bank").textContent = String(shopModel.bank);
+    el("res-bank").textContent = String(shopModel.bank);
     const grid = el("shop-grid");
     grid.innerHTML = "";
     for (const id of BOOSTER_ORDER) {
@@ -91,7 +97,7 @@ export function createUI(
       btn.className = "shop-item";
       btn.style.setProperty("--accent", info.color);
       btn.disabled = shopModel.bank < price;
-      btn.innerHTML = `<span class="shop-icon">${info.icon}</span><b>${info.name}</b><small>${info.desc}</small><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`;
+      btn.innerHTML = `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><small>${info.desc}</small><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`;
       btn.addEventListener("click", () => {
         shopModel!.buy(id);
         renderShop();
@@ -114,20 +120,20 @@ export function createUI(
       }
       lastCombo = combo;
     },
-    setBoosterBar(inventory, timers) {
-      const key = JSON.stringify([inventory, timers]);
+    setBoosterBar(inventory, armed, runOn) {
+      const key = JSON.stringify([inventory, armed, runOn]);
       if (key === barKey) return;
       barKey = key;
       bar.innerHTML = "";
       BOOSTER_ORDER.forEach((id, i) => {
         const owned = inventory[id] ?? 0;
-        const active = (timers[id] ?? 0) > 0;
-        if (owned <= 0 && !active) return;
+        const state = armed[id] ? "ARMED" : runOn[id] ? "ON" : "";
+        if (owned <= 0 && !state) return;
         const info = BOOSTER_INFO[id];
         const btn = document.createElement("button");
-        btn.className = `booster${active ? " active" : ""}`;
+        btn.className = `booster${state ? " active" : ""}`;
         btn.style.setProperty("--accent", info.color);
-        btn.innerHTML = `<span class="b-icon">${info.icon}</span><span class="b-count">${active ? Math.ceil((timers[id] ?? 0) / 120) + "s" : "×" + owned}</span><span class="b-key">${i + 1}</span>`;
+        btn.innerHTML = `<span class="b-icon">${info.svg}</span><span class="b-count">${state || "×" + owned}</span><span class="b-key">${i + 1}</span>`;
         btn.addEventListener("click", () => onActivate(id));
         bar.appendChild(btn);
       });

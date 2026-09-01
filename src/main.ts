@@ -50,7 +50,7 @@ const newRun = () => {
 
 function tryActivate(id: BoosterId): void {
   if (sim.finished) return;
-  if ((sim.boosterTimers[id] ?? 0) > 0) return; // already running
+  if (sim.armed[id] || sim.runOn[id]) return; // already armed / running
   if ((inventory[id] ?? 0) <= 0) return;
   inventory[id]--;
   save("tf.inv", inventory);
@@ -138,8 +138,8 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     driveTarget = null;
   }
 
-  // Chain-bomb showcase (owner): cascades play out in slow motion.
-  const slowMo = (sim.boosterTimers.chain ?? 0) > 0 && sim.queue.length > 0;
+  // Chain-bomb showcase (owner): the mega-cascade plays out in slow motion.
+  const slowMo = sim.queue.length > 0 && sim.tick - sim.chainBlastTick < 720;
   if (hitStopMs > 0) {
     hitStopMs = Math.max(0, hitStopMs - frameMs);
   } else {
@@ -167,7 +167,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   );
   renderer.frame(frameMs, lastTilt);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo);
-  ui.setBoosterBar(inventory, sim.boosterTimers);
+  ui.setBoosterBar(inventory, sim.armed, sim.runOn);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;
 });
 
@@ -206,8 +206,11 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   get inventory() {
     return { ...inventory };
   },
-  get timers() {
-    return { ...sim.boosterTimers };
+  get armed() {
+    return { ...sim.armed };
+  },
+  get runOn() {
+    return { ...sim.runOn };
   },
   grant(id: BoosterId, n = 1) {
     inventory[id] = (inventory[id] ?? 0) + n;

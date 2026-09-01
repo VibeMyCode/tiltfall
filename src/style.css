@@ -216,3 +216,7 @@ canvas#scene {
 .shop-price { font-size: 11px; color: #ffe9a8; font-weight: 700; }
 .shop-owned { position: absolute; top: 4px; right: 6px; font-size: 10px; color: #8fa2c9; }
 .shop-item:not(:disabled):active { transform: scale(0.95); }
+
+.b-icon svg, .shop-icon svg { display: block; color: var(--accent, #7fd4ff); }
+.shop-icon svg { width: 24px; height: 24px; }
+.res-bank b { color: #ffe9a8; }

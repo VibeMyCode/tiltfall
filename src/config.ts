@@ -44,17 +44,17 @@ export const CONFIG = {
   cascadeStepTicks: 10,
   blastRadius: 240,
 
-  // BOOSTERS (owner redesign, replaces mid-run draft gates): bought in the
-  // shop AFTER a run with banked score, activated mid-run on demand (tap or
-  // number key), each lasting boosterTicks of sim time.
-  boosterTicks: 720, // 6 s
+  // BOOSTERS (owner design): bought from the BANK after a run, activated on
+  // demand. Impact boosters are ONE-SHOT (armed until the next matching hit);
+  // x2/feather run to the end of the run. Prices tuned so a typical 5-7k run
+  // affords 2-3 purchases.
   boosters: {
-    quake: { price: 1500, blastCells: 3.2 }, // every break blasts a big radius
-    chain: { price: 1200, blastMul: 1.9 }, // bomb chains reach far + slow-mo showcase
-    x2: { price: 800, scoreMul: 2 },
-    heavy: { price: 600, massMul: 1.6, tiltMul: 0.85 },
-    bounce: { price: 500, breakBounce: 0.62 }, // big hop after each smash
-    feather: { price: 400, tiltMul: 1.8 },
+    quake: { price: 3000, blastCells: 3.4 }, // next smash blasts a huge radius
+    chain: { price: 2500, blastMul: 2.2 }, // next bomb mega-chains + slow-mo
+    x2: { price: 2200, scoreMul: 2 }, // rest of the run
+    heavy: { price: 1800 }, // next hit breaks ANY piece instantly
+    bounce: { price: 1500 }, // next smash launches you up like a bumper
+    feather: { price: 1200, tiltMul: 1.8 }, // rest of the run
   },
   slowMoScale: 0.35, // playback speed while a chain-bomb cascade showcases
 
@@ -68,6 +68,7 @@ export const CONFIG = {
   // Pity (§3.2, owner-tuned): no nudging — if a tier holds the ball this
   // long, it auto-shatters spectacularly. The nudge is gone.
   pityTicks: 2160, // 18 s
+  tierAttributionBias: 300, // resting ON a tier counts as THAT tier (pity fix)
 
   // Probe validation (tests only — no par UI, owner).
   probeTierTickLimit: 4800,

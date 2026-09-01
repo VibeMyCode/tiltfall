@@ -115,7 +115,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
   const MATS: Record<BlockType, StandardMaterial> = {
     glass: makeMaterial("mGlass", [0.3, 0.75, 0.95], 0.25, 0.62),
-    stone: makeMaterial("mStone", [0.45, 0.47, 0.55], 0.1),
+    // Stone must read as STONE (owner): matte earthy brown, zero glow.
+    stone: makeMaterial("mStone", [0.42, 0.33, 0.24], 0),
     bomb: makeMaterial("mBomb", [1.0, 0.62, 0.12], 0.7),
     bumper: makeMaterial("mBumper", [0.1, 1.0, 0.45], 0.85), // must scream "launcher"
     spike: makeMaterial("mSpike", [0.85, 0.12, 0.18], 0.5),
