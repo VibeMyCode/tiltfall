@@ -245,3 +245,30 @@ export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: num
   }
   return pts;
 }
+
+// Straight-down projection for the ball's position beacon (drop shadow):
+// the highest un-broken block top OR the next rest plane directly below.
+// Render-only consumer; never mutates state.
+export function projectDown(s: SimState): { y: number; onBlock: boolean } {
+  const C = CONFIG;
+  const b = s.ball;
+  let best: number = C.floorY;
+  for (let t = 0; t < C.tierCount; t++) {
+    const planeY = C.firstTierTopY + t * C.tierSpacing + C.blockH;
+    if (planeY > b.y + C.ballRadius) {
+      best = planeY;
+      break;
+    }
+  }
+  let onBlock = false;
+  for (const blk of s.blocks) {
+    if (blk.broken) continue;
+    const top = blk.cy - blk.hy;
+    if (top <= b.y || top >= best) continue;
+    if (Math.abs(b.x - blk.cx) <= blk.hx && Math.abs(b.z - blk.cz) <= blk.hz) {
+      best = top;
+      onBlock = true;
+    }
+  }
+  return { y: best, onBlock };
+}

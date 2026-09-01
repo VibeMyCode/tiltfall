@@ -3,7 +3,7 @@
 import "./style.css";
 import { CONFIG } from "./config";
 import { buildTower } from "./levelgen";
-import { createSim, predictPath, step, type SimState } from "./sim";
+import { createSim, predictPath, projectDown, step, type SimState } from "./sim";
 import { attachInput } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
@@ -17,11 +17,14 @@ const layout = buildTower(M1_SEED);
 let sim: SimState = createSim(layout);
 const input = attachInput(canvas);
 const renderer = createRenderer(canvas, layout);
-const ui = createUI(() => {
-  sim = createSim(layout);
-  renderer.resetBlocks();
-  ui.hideResults();
-});
+const ui = createUI(
+  () => {
+    sim = createSim(layout);
+    renderer.resetBlocks();
+    ui.hideResults();
+  },
+  { get: () => input.invertY(), toggle: () => input.toggleInvertY() },
+);
 
 let accumulator = 0;
 let hitStopMs = 0;
@@ -55,6 +58,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   renderer.syncBall(sim.ball);
   const tiltNow = input.current(nowMs);
   renderer.setAimPath(sim.finished ? null : predictPath(sim, tiltNow.x, tiltNow.z));
+  renderer.setBallShadow(sim.ball, projectDown(sim).y, !sim.finished);
   renderer.frame(frameMs, tiltNow);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;

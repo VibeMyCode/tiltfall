@@ -77,3 +77,12 @@ canvas#scene {
   cursor: pointer;
 }
 #res-replay:active { transform: scale(0.96); }
+
+.hud-toggle {
+  pointer-events: auto;
+  border: 1px solid #2c3766;
+  cursor: pointer;
+  color: #9fb4d8;
+  font-size: 14px;
+}
+.hud-toggle:active { transform: scale(0.94); }

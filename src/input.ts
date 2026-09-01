@@ -8,6 +8,18 @@ export interface InputState {
   sample: (nowMs: number) => { x: number; z: number };
   current: (nowMs: number) => { x: number; z: number };
   setForced: (t: { x: number; z: number } | null) => void;
+  invertY: () => boolean;
+  toggleInvertY: () => boolean;
+}
+
+// Player preference (render/input-side only — the sim just consumes tilt).
+function loadInvertY(): boolean {
+  try {
+    const v = localStorage.getItem("tf.invertY");
+    return v === null ? true : v === "1"; // owner default: inverted
+  } catch {
+    return true;
+  }
 }
 
 export function attachInput(canvas: HTMLCanvasElement): InputState {
@@ -22,7 +34,9 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
   let forced: { x: number; z: number } | null = null;
   let keyX = 0; // eased keyboard tilt
   let keyZ = 0;
+  let invY = loadInvertY(); // pointer Y only — keyboard W/S stays standard
   const held = new Set<string>();
+  const pzSign = () => CONFIG.inputSignZ * (invY ? -1 : 1);
 
   canvas.style.touchAction = "none";
   canvas.addEventListener("pointerdown", (e) => {
@@ -43,7 +57,7 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
     if (!dragging) return;
     dragging = false;
     releaseTiltX = CONFIG.inputSignX * clamp((lastX - originX) / CONFIG.tiltFullDragPx);
-    releaseTiltZ = CONFIG.inputSignZ * clamp((lastY - originY) / CONFIG.tiltFullDragPx);
+    releaseTiltZ = pzSign() * clamp((lastY - originY) / CONFIG.tiltFullDragPx);
     releaseTime = performance.now();
   };
   canvas.addEventListener("pointerup", endDrag);
@@ -57,7 +71,7 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
     if (dragging) {
       return {
         x: CONFIG.inputSignX * clamp((lastX - originX) / CONFIG.tiltFullDragPx),
-        z: CONFIG.inputSignZ * clamp((lastY - originY) / CONFIG.tiltFullDragPx),
+        z: pzSign() * clamp((lastY - originY) / CONFIG.tiltFullDragPx),
       };
     }
     const k = Math.max(0, 1 - (nowMs - releaseTime) / CONFIG.tiltReleaseEaseMs);
@@ -92,6 +106,16 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
     },
     setForced(t) {
       forced = t;
+    },
+    invertY: () => invY,
+    toggleInvertY() {
+      invY = !invY;
+      try {
+        localStorage.setItem("tf.invertY", invY ? "1" : "0");
+      } catch {
+        // storage unavailable (private mode) — the toggle still works this session
+      }
+      return invY;
     },
   };
 }

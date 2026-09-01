@@ -43,6 +43,7 @@ export interface Renderer {
   consumeHitStop: () => number;
   resetBlocks: () => void;
   setAimPath: (points: { x: number; y: number; z: number }[] | null) => void;
+  setBallShadow: (b: { x: number; y: number; z: number }, groundY: number, visible: boolean) => void;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): Renderer {
@@ -251,6 +252,23 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   laser.parent = tower;
   laser.setEnabled(false);
 
+  // Position beacon (depth cue, owner issue: "can't feel the ball on the
+  // near/far axis"): a drop-shadow disc projected straight down onto the
+  // surface below, plus a faint plumb line from ball to disc.
+  const shadowDisc = MeshBuilder.CreateDisc("ballShadow", { radius: C.ballRadius * 1.05, tessellation: 28 }, scene);
+  const shadowMat = new StandardMaterial("mShadow", scene);
+  shadowMat.diffuseColor = new Color3(0, 0, 0);
+  shadowMat.specularColor = new Color3(0, 0, 0);
+  shadowMat.emissiveColor = new Color3(0, 0, 0);
+  shadowMat.alpha = 0.4;
+  shadowDisc.material = shadowMat;
+  shadowDisc.rotation.x = Math.PI / 2;
+  shadowDisc.parent = tower;
+  const plumbPts = [new Vector3(0, 0, 0), new Vector3(0, 0, 0)];
+  const plumbColors = [new Color4(0.7, 0.85, 1, 0.28), new Color4(0.7, 0.85, 1, 0.05)];
+  let plumb = MeshBuilder.CreateLines("plumb", { points: plumbPts, colors: plumbColors, updatable: true }, scene);
+  plumb.parent = tower;
+
   return {
     engine,
     scene,
@@ -276,6 +294,18 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     },
     resetBlocks() {
       for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
+    },
+    setBallShadow(b, groundY, visible) {
+      shadowDisc.setEnabled(visible);
+      plumb.setEnabled(visible);
+      if (!visible) return;
+      shadowDisc.position = toLocal(b.x, groundY - 3, b.z);
+      // Nearer ground → denser shadow (extra depth information for free).
+      const dist = Math.max(0, groundY - b.y);
+      shadowMat.alpha = 0.18 + 0.32 * (1 - Math.min(1, dist / 2600));
+      plumbPts[0].set(b.x - C.shaftW / 2, -b.y, b.z - C.shaftD / 2);
+      plumbPts[1].set(b.x - C.shaftW / 2, -(groundY - 3), b.z - C.shaftD / 2);
+      plumb = MeshBuilder.CreateLines("plumb", { points: plumbPts, instance: plumb });
     },
     setAimPath(points) {
       if (!points || points.length < 2 || !C.laserOn) {

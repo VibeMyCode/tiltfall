@@ -5,14 +5,19 @@ export interface UI {
   hideResults: () => void;
 }
 
-export function createUI(onReplay: () => void): UI {
+export function createUI(onReplay: () => void, invert: { get: () => boolean; toggle: () => boolean }): UI {
   const hud = document.createElement("div");
   hud.className = "hud";
   hud.innerHTML = `
     <div class="hud-item" id="hud-time">0.0s</div>
     <div class="hud-item hud-score" id="hud-score">0</div>
-    <div class="hud-item hud-combo" id="hud-combo">×1</div>`;
+    <div class="hud-item hud-combo" id="hud-combo">×1</div>
+    <button class="hud-item hud-toggle" id="hud-invert"></button>`;
   document.body.appendChild(hud);
+  const invertBtn = hud.querySelector<HTMLButtonElement>("#hud-invert")!;
+  const renderInvert = (on: boolean) => (invertBtn.textContent = `Y ${on ? "⇅ INV" : "↓ STD"}`);
+  renderInvert(invert.get());
+  invertBtn.addEventListener("click", () => renderInvert(invert.toggle()));
 
   const results = document.createElement("div");
   results.className = "results hidden";
