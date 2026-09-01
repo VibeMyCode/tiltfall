@@ -220,3 +220,9 @@ canvas#scene {
 .b-icon svg, .shop-icon svg { display: block; color: var(--accent, #7fd4ff); }
 .shop-icon svg { width: 24px; height: 24px; }
 .res-bank b { color: #ffe9a8; }
+
+/* Digits must not jiggle the HUD: tabular numerals + reserved widths */
+.hud-item { font-variant-numeric: tabular-nums; }
+#hud-time { min-width: 64px; text-align: center; }
+#hud-score { min-width: 84px; }
+#hud-combo { min-width: 46px; text-align: center; }
