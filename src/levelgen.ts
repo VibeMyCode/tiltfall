@@ -149,8 +149,33 @@ export function buildTier(seed: number, tier: number): BlockDef[] {
   const spikes = Math.min(CONFIG.spikeMaxPerTier, tier < 1 ? 0 : 1 + Math.floor(tier / 4));
   for (let i = 0; i < spikes; i++) placeSingle("spike", 40);
   if (tier >= C.mineFreeTiers) {
+    // Mines are deliberately SMALLER than a cell (owner): easier to read,
+    // slightly easier to thread past.
     const mines = C.mineCount(tier);
-    for (let i = 0; i < mines; i++) placeSingle("mine", 50);
+    for (let i = 0; i < mines; i++) {
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const r = Math.floor(rng() * C.gridN);
+        const c = Math.floor(rng() * C.gridN);
+        if (!free(r, c, 1, 1)) continue;
+        claim(r, c, 1, 1);
+        out.push({
+          id: nextId++,
+          groupId: nextGroup++,
+          type: "mine",
+          primary: true,
+          cells: 1,
+          cx: C.gridX0 + c * C.cell + C.cell / 2,
+          cy: restY - 32,
+          cz: C.gridX0 + r * C.cell + C.cell / 2,
+          hx: 32,
+          hy: 32,
+          hz: 32,
+          threshold: Infinity,
+          deps: [],
+        });
+        break;
+      }
+    }
   }
   return out;
 }

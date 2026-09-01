@@ -34,7 +34,7 @@ export const BOOSTER_INFO: Record<BoosterId, { name: string; svg: string; desc: 
     svg: svg(
       '<circle cx="9.5" cy="14.5" r="6" fill="currentColor"/><path d="M13.5 10.5L17 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 7l2.2-1.2M17 7l1.2 2.2M17 7l.4-2.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
     ),
-    desc: "Next bomb mega-chains, slow-mo",
+    desc: "Next smash detonates a mega-chain, slow-mo",
     color: "#ffd23f",
   },
   x2: {

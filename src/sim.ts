@@ -153,12 +153,15 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
       const scoreMul = s.runOn.x2 ? B.x2.scoreMul : 1;
       s.score += (CONFIG.points[b.type] ?? 0) * b.cells * s.combo * scoreMul;
       if (b.type === "bomb") {
-        const mul = s.armed.chain ? B.chain.blastMul : 1;
-        if (s.armed.chain) {
-          s.armed.chain = false;
-          s.chainBlastTick = s.tick;
-        }
-        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * mul, CONFIG.cascadeStepTicks);
+        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius, CONFIG.cascadeStepTicks);
+      }
+      if (!cascade && s.armed.chain) {
+        // CHAIN BOMB (one-shot): the next smash ITSELF detonates as a
+        // mega-bomb; real bombs caught in the wave explode too — the chain
+        // reaction — and the showcase runs in slow motion.
+        s.armed.chain = false;
+        s.chainBlastTick = s.tick;
+        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * B.chain.blastMul, CONFIG.cascadeStepTicks);
       }
       if (!cascade && s.armed.quake) {
         s.armed.quake = false;

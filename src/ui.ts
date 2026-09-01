@@ -19,8 +19,17 @@ export interface ResultsModel {
   bestDepth: number;
   newBest: boolean;
   shop: ShopModel;
-  level: { level: number; cost: number; jumpPower: number; jumpCdS: number; shields: number; buy: () => boolean };
-  skins: { unlocked: string[]; current: string; select: (id: string) => void };
+  // Live getters — the panel re-renders after purchases and must never show
+  // a stale snapshot (owner bug: LEVEL stayed at 1 after buying).
+  level: {
+    current: () => number;
+    cost: () => number;
+    jumpPower: () => number;
+    jumpCdS: () => number;
+    shields: () => number;
+    buy: () => boolean;
+  };
+  skins: { unlocked: () => string[]; current: () => string; select: (id: string) => void };
   daily: {
     tasks: (DailyTask & { progress: number; claimed: boolean })[];
     claim: (id: string) => void;
@@ -90,21 +99,25 @@ export function createUI(h: UIHandlers): UI {
   results.className = "results hidden";
   results.innerHTML = `
     <div class="results-card">
-      <div class="new-best hidden" id="res-newbest">🏆 NEW BEST!</div>
-      <h2 id="res-title">BOOM — GAME OVER</h2>
-      <div class="results-row"><span>Score</span><b id="res-score">0</b></div>
-      <div class="results-row"><span>Depth</span><b id="res-depth">0</b></div>
-      <div class="results-row"><span>Blocks smashed</span><b id="res-broken">0</b></div>
-      <div class="results-row"><span>Best combo</span><b id="res-combo">×1</b></div>
-      <div class="results-row res-best"><span>Best score / depth</span><b id="res-best">0 / 0</b></div>
-      <div class="results-row res-bank"><span>Run score → BANK</span><b id="res-bank">0</b></div>
-      <div class="level-box" id="level-box"></div>
-      <div class="skin-row" id="skin-row"></div>
-      <div class="shop">
-        <div class="shop-head">BOOSTER SHOP · spend your BANK <span class="bank" id="shop-bank">0</span></div>
-        <div class="shop-grid" id="shop-grid"></div>
+      <div class="results-scroll">
+        <div class="new-best hidden" id="res-newbest">🏆 NEW BEST!</div>
+        <h2 id="res-title">GAME OVER</h2>
+        <div class="hero-score" id="res-score">0</div>
+        <div class="hero-sub">BEST <b id="res-best">0</b></div>
+        <div class="chip-row">
+          <span class="chip">◈ <b id="res-depth">0</b><i>depth</i></span>
+          <span class="chip">▦ <b id="res-broken">0</b><i>blocks</i></span>
+          <span class="chip">× <b id="res-combo">1</b><i>combo</i></span>
+        </div>
+        <div class="bank-line">BANK <b class="bank" id="shop-bank">0</b></div>
+        <div class="level-box" id="level-box"></div>
+        <div class="skin-row" id="skin-row"></div>
+        <div class="section" id="shop-section">
+          <div class="section-head">BOOSTERS</div>
+          <div class="shop-grid" id="shop-grid"></div>
+        </div>
+        <div class="section daily" id="daily-box"></div>
       </div>
-      <div class="daily" id="daily-box"></div>
       <button id="res-replay">DROP AGAIN</button>
     </div>`;
   document.body.appendChild(results);
@@ -118,15 +131,17 @@ export function createUI(h: UIHandlers): UI {
     if (!model) return;
     const m = model;
     el("shop-bank").textContent = String(m.shop.bank);
-    el("res-bank").textContent = String(m.shop.bank);
 
-    // Level panel: what leveling gives is spelled out (owner).
+    // Level panel — live values, never a stale snapshot.
+    const lvl = m.level.current();
+    const cost = m.level.cost();
+    const shields = m.level.shields();
     const lb = el("level-box");
     lb.innerHTML = `
-      <div class="lvl-head">LEVEL <b>${m.level.level}</b>
-        <span class="lvl-stats">jump ${m.level.jumpPower} · cd ${m.level.jumpCdS.toFixed(1)}s${m.level.shields ? ` · ⛨×${m.level.shields}` : ""}</span>
+      <div class="lvl-head">LEVEL <b>${lvl}</b>
+        <span class="lvl-stats">jump ${m.level.jumpPower()} · cd ${m.level.jumpCdS().toFixed(1)}s${shields ? ` · ⛨×${shields}` : ""}</span>
       </div>
-      <button id="lvl-buy" ${m.shop.bank < m.level.cost ? "disabled" : ""}>LEVEL UP — ${m.level.cost}</button>`;
+      <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;
     lb.querySelector<HTMLButtonElement>("#lvl-buy")!.addEventListener("click", () => {
       if (m.level.buy()) renderPanels();
     });
@@ -134,9 +149,9 @@ export function createUI(h: UIHandlers): UI {
     // Skins.
     const sr = el("skin-row");
     sr.innerHTML = "";
-    for (const id of m.skins.unlocked) {
+    for (const id of m.skins.unlocked()) {
       const b = document.createElement("button");
-      b.className = `skin skin-${id}${id === m.skins.current ? " sel" : ""}`;
+      b.className = `skin skin-${id}${id === m.skins.current() ? " sel" : ""}`;
       b.title = id;
       b.addEventListener("click", () => {
         m.skins.select(id);
@@ -177,7 +192,7 @@ export function createUI(h: UIHandlers): UI {
         return `<div class="task${t.claimed ? " claimed" : ""}"><span>${t.text}</span>${btn}</div>`;
       })
       .join("");
-    db.innerHTML = `<div class="shop-head">DAILY TASKS</div>${rows}`;
+    db.innerHTML = `<div class="section-head">DAILY TASKS</div>${rows}`;
     db.querySelectorAll<HTMLButtonElement>(".task-claim").forEach((b) =>
       b.addEventListener("click", () => {
         m.daily.claim(b.dataset.id!);
@@ -228,14 +243,16 @@ export function createUI(h: UIHandlers): UI {
       el("res-score").textContent = String(r.score);
       el("res-depth").textContent = String(r.depth);
       el("res-broken").textContent = String(r.broken);
-      el("res-combo").textContent = `×${r.maxCombo}`;
-      el("res-best").textContent = `${r.bestScore} / ${r.bestDepth}`;
+      el("res-combo").textContent = String(r.maxCombo);
+      el("res-best").textContent = `${r.bestScore} · depth ${r.bestDepth}`;
       el("res-newbest").classList.toggle("hidden", !r.newBest);
       renderPanels();
+      document.body.classList.add("gameover"); // hides jump/booster bar
       results.classList.remove("hidden");
     },
     hideResults() {
       results.classList.add("hidden");
+      document.body.classList.remove("gameover");
       model = null;
     },
   };

@@ -67,6 +67,7 @@ const renderer = createRenderer(canvas, sim.blocks);
 renderer.setSkin(skin);
 
 const newRun = () => {
+  clearTimeout(resultsTimer);
   sim = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
   banked = false;
   renderer.setLayout(sim.blocks);
@@ -95,16 +96,25 @@ const ui = createUI({
   onJump: tryJump,
 });
 
+let resultsTimer = 0;
+let lastNewBest = false;
+
 function onFinish(): void {
   if (banked) return;
   banked = true;
   bank += sim.score;
   trackRunEnd(daily, sim.score);
   save("tf.daily", daily);
-  const newBest = sim.score > best.score || sim.depth > best.depth;
+  lastNewBest = sim.score > best.score || sim.depth > best.depth;
   best = { score: Math.max(best.score, sim.score), depth: Math.max(best.depth, sim.depth) };
   save("tf.bank", bank);
   save("tf.best", best);
+  // The death scene plays first (ball shatters, slow beat) — the overlay
+  // fades in after it, never over it (owner design).
+  resultsTimer = window.setTimeout(showResultsNow, 1500);
+}
+
+function showResultsNow(): void {
   ui.showResults({
     score: sim.score,
     depth: sim.depth,
@@ -112,7 +122,7 @@ function onFinish(): void {
     maxCombo: sim.maxCombo,
     bestScore: best.score,
     bestDepth: best.depth,
-    newBest,
+    newBest: lastNewBest,
     shop: {
       get bank() {
         return bank;
@@ -128,11 +138,11 @@ function onFinish(): void {
       },
     },
     level: {
-      level,
-      cost: levelCost(level),
-      jumpPower: jumpPowerAt(level),
-      jumpCdS: jumpCooldownAt(level) * CONFIG.dt,
-      shields: shieldsAt(level),
+      current: () => level,
+      cost: () => levelCost(level),
+      jumpPower: () => jumpPowerAt(level),
+      jumpCdS: () => jumpCooldownAt(level) * CONFIG.dt,
+      shields: () => shieldsAt(level),
       buy: () => {
         const cost = levelCost(level);
         if (bank < cost) return false;
@@ -144,8 +154,8 @@ function onFinish(): void {
       },
     },
     skins: {
-      unlocked: skinsAt(level),
-      current: skin,
+      unlocked: () => skinsAt(level),
+      current: () => skin,
       select: (id) => {
         if (!skinsAt(level).includes(id)) return;
         skin = id;

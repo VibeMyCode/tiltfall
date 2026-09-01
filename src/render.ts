@@ -134,10 +134,10 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     blockInfo.set(b.id, b);
     let mesh: Mesh;
     if (b.type === "mine") {
-      // A MINE must read as lethal: dark sphere with a glowing red core.
-      mesh = MeshBuilder.CreateSphere(`b${b.id}`, { diameter: 76, segments: 10 }, scene);
+      // A MINE must read as lethal: small dark sphere with a glowing red core.
+      mesh = MeshBuilder.CreateSphere(`b${b.id}`, { diameter: 60, segments: 10 }, scene);
       mesh.material = MATS.mine;
-      mesh.position = toLocal(b.cx, b.cy - 6, b.cz);
+      mesh.position = toLocal(b.cx, b.cy, b.cz);
     } else {
       mesh = MeshBuilder.CreateBox(
         `b${b.id}`,
@@ -357,6 +357,34 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           }
           ballPulse = 1;
           pendingHitStop = 220;
+          if (e.kind === "mine") {
+            // Death scene (owner): the BALL itself shatters — big bright
+            // shards of its own color — before the overlay fades in.
+            ballMesh.computeWorldMatrix(true);
+            const bp = ballMesh.position.clone();
+            ballMesh.setEnabled(false);
+            for (let i = 0; i < 30; i++) {
+              const size = 16 + Math.random() * 30;
+              const m = MeshBuilder.CreateBox("ball-sh", { size }, scene);
+              m.material = ballMat;
+              m.parent = tower;
+              m.position = bp.add(
+                new Vector3((Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70),
+              );
+              const maxLife = 1.5 + Math.random() * 1.0;
+              shards.push({
+                mesh: m,
+                vx: (Math.random() - 0.5) * 2000,
+                vy: 300 + Math.random() * 1100,
+                vz: (Math.random() - 0.5) * 2000,
+                rx: (Math.random() - 0.5) * 16,
+                rz: (Math.random() - 0.5) * 16,
+                life: maxLife,
+                maxLife,
+                size,
+              });
+            }
+          }
         } else if (e.kind === "bumper" && e.id !== undefined) {
           const info = blockInfo.get(e.id);
           if (info) {
@@ -383,6 +411,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       blockMeshes.clear();
       blockInfo.clear();
       for (const b of blocks) addBlockMesh(b);
+      ballMesh.setEnabled(true); // the ball is reborn with the new tower
     },
     syncLayout(blocks) {
       for (const b of blocks) if (!blockMeshes.has(b.id)) addBlockMesh(b);
