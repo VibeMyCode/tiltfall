@@ -6,17 +6,24 @@ Run it: `npm install` · `npm run dev` (served on 0.0.0.0:5173) · `npm test` ·
 
 ## Status
 
-**Built:** scaffold + **M0 feel probe** in `src/main.ts` (single file per SPEC §11 M0):
-§3.3 physics with the gravity-tilt trick, pointer-drag tilt, one 8×8 tier (~30 blocks:
-glass/stone + support with 3 dependents), impulse breaking with break-through, staggered
-cascade with shard animation + screen shake, smoothed follow camera, auto-reset on floor
-rest. Headless-verified (real GPU, cascade breaks 4 blocks, tilt steers both ways,
-auto-reset fires, zero console errors).
+**Built:** M0 (owner-approved with feedback applied) + **M1 — The toy**, now in
+proper modules per SPEC §10: `config.ts` (all tunables), `rng.ts` (mulberry32 named
+streams, FNV-1a, dateSeed), `levelgen.ts` (seeded 5-tier generator, M1 subset of
+§4.3), `sim.ts` (pure deterministic simulation: §3.3 physics, contact order,
+impulse/break-through, support cascades, combo ×10, scoring, finish), `input.ts`
+(pointer drag + WASD/arrows eased to parity, per-tick millitilt sampling),
+`render.ts` (Babylon mirror: glow/bloom/fog, impact-inheriting shards, floor debris,
+shockwaves, hit-stop, shake, tilt zoom-out, portrait aspect zoom), `ui.ts` (HUD:
+time/score/combo; Results + replay). Tests: determinism (checksummed double-run),
+banned-API source grep, smoke. Headless-verified: cascade, steering by pointer AND
+keyboard, full descent → results → replay, portrait framing, median 60 fps, zero
+console errors.
 
-**Left:** owner playtest gate for M0 (tilt feel + avalanche read), then M1+.
+**Left:** M2 (full §4.3 levelgen with probes/spikes/bumpers/crystals, §4.2 cascade
+graphs everywhere, draft gates + 8 cards, anti-stall), then M3 meta / M4 daily+ghost /
+M5 polish.
 
-**Next:** owner plays at http://localhost:5173 → verdict on feel → M1 (config/rng/sim
-extraction into modules, 5-tier tower, keyboard input, HUD).
+**Next:** M2 — draft gates and the card system.
 
 ### Milestones (from SPEC.md §11)
 
