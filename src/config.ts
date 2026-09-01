@@ -49,10 +49,13 @@ export const CONFIG = {
   restSpeed: 100,
   restTicks: 45,
 
-  // Tilt input (§3.1).
+  // Tilt input (§3.1). Screen-space signs set by LOOKING at the running game
+  // (with the static world the camera faces -Z, so screen-right is world -X).
   tiltFullDragPx: 140,
   tiltReleaseEaseMs: 250,
   keyTiltRate: 5.5, // tilt units per second toward keyboard target
+  inputSignX: -1,
+  inputSignZ: 1,
 
   // Visual presentation of steering. 0 = direct "air control" look (owner
   // pick: the world stays still, you steer the falling ball; the landing
@@ -63,12 +66,19 @@ export const CONFIG = {
   maxVisualTiltDeg: 0,
   camAimAheadY: 380, // camera looks this far BELOW the ball — see what's coming
 
+  // Aim laser (owner design): a thin red real-trajectory line fading toward
+  // its tip, ~half a tier gap long. Future monetization slot: sellable /
+  // reward-activated booster; for development it is always on.
+  laserOn: true,
+  laserLen: 1000,
+  laserPoints: 28,
+
   // Camera.
   camHeight: 1500,
   camDist: 1020,
   camFov: 0.9,
   camSmooth: 0.09,
-  camTiltZoom: 0.25, // zoom-OUT fraction at full tilt
+  camTiltZoom: 0, // input-linked zoom retired with the static world (owner: jerky)
   portraitTargetAspect: 1.15, // keep shaft width in frame on portrait phones
 
   // Juice (render-only). No positional camera shake — it reads as an input

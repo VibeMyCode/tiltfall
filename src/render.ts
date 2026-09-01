@@ -42,7 +42,7 @@ export interface Renderer {
   frame: (frameMs: number, tilt: { x: number; z: number }) => void;
   consumeHitStop: () => number;
   resetBlocks: () => void;
-  setReticle: (point: { x: number; y: number; z: number } | null) => void;
+  setAimPath: (points: { x: number; y: number; z: number }[] | null) => void;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): Renderer {
@@ -239,15 +239,17 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   const camPos = new Vector3(C.spawn.x, -C.spawn.y + C.camHeight, C.spawn.z + C.camDist);
   const camAim = new Vector3(C.spawn.x, -C.spawn.y, C.spawn.z);
 
-  // Landing reticle: where the ball is headed on the next tier (aim aid).
-  const reticle = MeshBuilder.CreateDisc("reticle", { radius: 46, tessellation: 32 }, scene);
-  const reticleMat = makeMaterial("mReticle", [0.4, 1.0, 0.75], 1);
-  reticleMat.alpha = 0.75;
-  reticle.material = reticleMat;
-  reticle.rotation.x = Math.PI / 2;
-  reticle.parent = tower;
-  reticle.setEnabled(false);
-  let reticlePhase = 0;
+  // Aim laser (owner design): thin red trajectory line, fading toward the
+  // tip. Fixed point count so the LinesMesh can be updated in place.
+  const N = C.laserPoints;
+  const laserPts: Vector3[] = Array.from({ length: N }, () => new Vector3(0, 0, 0));
+  const laserColors = Array.from({ length: N }, (_, i) => {
+    const t = i / (N - 1);
+    return new Color4(1, 0.28, 0.22, 0.85 * (1 - t) * (1 - t));
+  });
+  let laser = MeshBuilder.CreateLines("laser", { points: laserPts, colors: laserColors, updatable: true }, scene);
+  laser.parent = tower;
+  laser.setEnabled(false);
 
   return {
     engine,
@@ -275,13 +277,17 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     resetBlocks() {
       for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
     },
-    setReticle(point) {
-      if (!point) {
-        reticle.setEnabled(false);
+    setAimPath(points) {
+      if (!points || points.length < 2 || !C.laserOn) {
+        laser.setEnabled(false);
         return;
       }
-      reticle.setEnabled(true);
-      reticle.position = toLocal(point.x, point.y - 60, point.z);
+      laser.setEnabled(true);
+      for (let i = 0; i < N; i++) {
+        const src = points[Math.min(i, points.length - 1)];
+        laserPts[i].set(src.x - C.shaftW / 2, -src.y, src.z - C.shaftD / 2);
+      }
+      laser = MeshBuilder.CreateLines("laser", { points: laserPts, instance: laser });
     },
     frame(frameMs, tilt) {
       updateEffects(frameMs / 1000);
@@ -321,10 +327,6 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       camAim.z += (p.z - camAim.z) * C.camSmooth;
       camera.position.set(camPos.x, camPos.y, camPos.z);
       camera.setTarget(camAim);
-      // Reticle breathes.
-      reticlePhase += frameMs / 320;
-      const pulse = 1 + 0.14 * ((reticlePhase % 2 < 1 ? reticlePhase % 1 : 1 - (reticlePhase % 1)) - 0.5);
-      reticle.scaling.setAll(pulse);
     },
   };
 }

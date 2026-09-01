@@ -42,8 +42,8 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
   const endDrag = () => {
     if (!dragging) return;
     dragging = false;
-    releaseTiltX = clamp((lastX - originX) / CONFIG.tiltFullDragPx);
-    releaseTiltZ = clamp((lastY - originY) / CONFIG.tiltFullDragPx);
+    releaseTiltX = CONFIG.inputSignX * clamp((lastX - originX) / CONFIG.tiltFullDragPx);
+    releaseTiltZ = CONFIG.inputSignZ * clamp((lastY - originY) / CONFIG.tiltFullDragPx);
     releaseTime = performance.now();
   };
   canvas.addEventListener("pointerup", endDrag);
@@ -56,8 +56,8 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
   function pointerTilt(nowMs: number): { x: number; z: number } {
     if (dragging) {
       return {
-        x: clamp((lastX - originX) / CONFIG.tiltFullDragPx),
-        z: clamp((lastY - originY) / CONFIG.tiltFullDragPx),
+        x: CONFIG.inputSignX * clamp((lastX - originX) / CONFIG.tiltFullDragPx),
+        z: CONFIG.inputSignZ * clamp((lastY - originY) / CONFIG.tiltFullDragPx),
       };
     }
     const k = Math.max(0, 1 - (nowMs - releaseTime) / CONFIG.tiltReleaseEaseMs);
@@ -67,7 +67,7 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
   function keyTarget(): { x: number; z: number } {
     const x = (held.has("ArrowRight") || held.has("KeyD") ? 1 : 0) - (held.has("ArrowLeft") || held.has("KeyA") ? 1 : 0);
     const z = (held.has("ArrowDown") || held.has("KeyS") ? 1 : 0) - (held.has("ArrowUp") || held.has("KeyW") ? 1 : 0);
-    return { x, z };
+    return { x: CONFIG.inputSignX * x, z: CONFIG.inputSignZ * z };
   }
 
   function current(nowMs: number): { x: number; z: number } {
