@@ -9,8 +9,8 @@ export const CONFIG = {
   // the long fall is where you see the next tier, aim, and prepare.
   tierCount: 5,
   firstTierTopY: 1200,
-  tierSpacing: 2000,
-  floorY: 11400,
+  tierSpacing: 2400,
+  floorY: 13400,
   spawn: { x: 650, y: 140, z: 650 },
   cell: 100,
   gridN: 8,
@@ -25,7 +25,7 @@ export const CONFIG = {
   maxSpeed: 2600,
   wallRestitution: 0.6,
   floorRestitution: 0.35,
-  blockRestitution: 0.5,
+  blockRestitution: 0.6, // bouncier ball (owner feedback)
   friction: 0.98,
 
   // Breaking (§3.3): J = round(|v_axis| * mass / impulseScale); a one-tier
@@ -33,6 +33,8 @@ export const CONFIG = {
   ballMass: 1,
   impulseScale: 96,
   breakThroughLoss: 0.62,
+  breakBounce: 0.32, // smashing DOWN through a piece pops the ball back up —
+  // a beat of air time to aim at the next tier (owner design)
   thresholds: { glass: 8, stone: 22, bomb: 8 } as Record<string, number>,
   points: { glass: 10, stone: 25, bomb: 30 } as Record<string, number>,
 

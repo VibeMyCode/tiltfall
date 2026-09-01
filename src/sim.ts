@@ -109,9 +109,11 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
     const j = Math.round((Math.abs(vAxis) * CONFIG.ballMass) / CONFIG.impulseScale);
     const dmg = (s.groupDamage[b.groupId] ?? 0) + j;
     if (dmg >= b.threshold) {
-      // Break-through (§3.3): no bounce, punchy speed loss on the hit axis.
       breakGroup(s, b.groupId, false, events);
-      if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
+      // Smashing DOWN through a piece pops the ball back up a little — air
+      // time to aim (owner design). Other directions punch through with loss.
+      if (axis === "y" && vAxis > 0) ball.vy = -ball.vy * CONFIG.breakBounce;
+      else if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
       else if (axis === "y") ball.vy *= CONFIG.breakThroughLoss;
       else ball.vz *= CONFIG.breakThroughLoss;
       continue;
@@ -198,23 +200,16 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   return events;
 }
 
-// Aim trajectory: the SAME integrator and wall maths as step(), ignoring
-// blocks — the ball's real flight path under the current (held) tilt, down
-// to the next tier plane (or the floor). The LAST point is the predicted
-// landing spot. Render-only consumer; never mutates state.
+// Aim trajectory: the SAME integrator and wall maths as step() — the ball's
+// real flight path under the current (held) tilt, down to the first REAL
+// surface: an un-broken piece top or the floor. Falls straight through tier
+// gaps like a real shadow would (owner fix: never hover on empty air). The
+// LAST point is the landing spot. Render-only consumer; never mutates state.
 export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: number; y: number; z: number }[] {
   const C = CONFIG;
-  let target: number = C.floorY;
-  for (let t = 0; t < C.tierCount; t++) {
-    const planeY = C.firstTierTopY + t * C.tierSpacing + C.blockH;
-    if (planeY - 10 > s.ball.y + C.ballRadius) {
-      target = planeY;
-      break;
-    }
-  }
   const pts: { x: number; y: number; z: number }[] = [];
   let { x, y, z, vx, vy, vz } = s.ball;
-  for (let i = 0; i < 600; i++) {
+  for (let i = 0; i < 900; i++) {
     vx += C.g0 * C.kTilt * tiltX * C.dt;
     vy += C.g0 * C.dt;
     vz += C.g0 * C.kTilt * tiltZ * C.dt;
@@ -248,10 +243,24 @@ export function predictPath(s: SimState, tiltX: number, tiltZ: number): { x: num
       vz = -vz * C.wallRestitution;
     }
     if (i % 5 === 0) pts.push({ x, y, z });
-    if (y + C.ballRadius >= target) {
-      pts.push({ x, y: target, z }); // the landing spot — always the last point
+    if (y + C.ballRadius >= C.floorY) {
+      pts.push({ x, y: C.floorY, z });
       break;
     }
+    // Land on the first un-broken piece top the path actually reaches.
+    let landed = false;
+    for (const blk of s.blocks) {
+      if (blk.broken) continue;
+      const top = blk.cy - blk.hy;
+      if (y + C.ballRadius < top) continue;
+      if (y > blk.cy + blk.hy) continue; // already passed this piece
+      if (Math.abs(x - blk.cx) <= blk.hx && Math.abs(z - blk.cz) <= blk.hz) {
+        pts.push({ x, y: top, z });
+        landed = true;
+        break;
+      }
+    }
+    if (landed) break;
   }
   return pts;
 }

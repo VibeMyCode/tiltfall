@@ -296,8 +296,9 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       }
       thread.setEnabled(true);
       landDisc.setEnabled(true);
+      // Resample the (possibly multi-tier) path evenly onto N thread points.
       for (let i = 0; i < N; i++) {
-        const src = points[Math.min(i, points.length - 1)];
+        const src = points[Math.round((i * (points.length - 1)) / (N - 1))];
         threadPts[i].set(src.x - C.shaftW / 2, -src.y, src.z - C.shaftD / 2);
       }
       thread = MeshBuilder.CreateLines("aimThread", { points: threadPts, instance: thread });
