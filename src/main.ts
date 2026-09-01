@@ -28,17 +28,47 @@ const ui = createUI(
 
 let accumulator = 0;
 let hitStopMs = 0;
+let lastTilt = { x: 0, z: 0 };
+let lastLandY = CONFIG.firstTierTopY + CONFIG.blockH;
+let driveTarget: { x: number; z: number } | null = null;
+
+const clampT = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
+const clampShaft = (v: number, max: number) => Math.min(max - CONFIG.ballRadius, Math.max(CONFIG.ballRadius, v));
+
+// Target control (owner design): the pointer drives the landing disc; this
+// PD controller synthesizes ordinary tilt input that chases it, so the sim
+// contract (tilt in, deterministic ticks) is untouched.
+function controlTilt(kb: { x: number; z: number }): { x: number; z: number } {
+  if (!driveTarget) return kb;
+  const b = sim.ball;
+  const cx = (driveTarget.x - b.x) / CONFIG.targetGainDist - b.vx / CONFIG.targetGainVel;
+  const cz = (driveTarget.z - b.z) / CONFIG.targetGainDist - b.vz / CONFIG.targetGainVel;
+  return {
+    x: Math.round(clampT(kb.x + cx) * 1000) / 1000,
+    z: Math.round(clampT(kb.z + cz) * 1000) / 1000,
+  };
+}
 
 renderer.scene.onBeforeRenderObservable.add(() => {
   const nowMs = performance.now();
   const frameMs = Math.min(renderer.engine.getDeltaTime(), MAX_FRAME_MS);
+
+  // Map the pointer to a target on the current aim plane (once per frame).
+  driveTarget = null;
+  const pt = input.pointer();
+  if (CONFIG.targetControl && pt.active && !input.forced()) {
+    const m = renderer.screenToShaft(pt.cx, pt.cy, lastLandY);
+    if (m) driveTarget = { x: clampShaft(m.x, CONFIG.shaftW), z: clampShaft(m.z, CONFIG.shaftD) };
+  }
+
   if (hitStopMs > 0) {
     hitStopMs -= frameMs; // sim holds its breath; shards keep flying
   } else {
     accumulator += frameMs;
   }
   while (accumulator >= DT_MS) {
-    const s = input.sample(nowMs);
+    const s = CONFIG.targetControl ? controlTilt(input.sample(nowMs, true)) : input.sample(nowMs);
+    lastTilt = s;
     const events = step(sim, s.x, s.z);
     if (events.length) {
       renderer.applyEvents(events);
@@ -56,9 +86,10 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   }
 
   renderer.syncBall(sim.ball);
-  const tiltNow = input.current(nowMs);
-  renderer.setAim(sim.finished ? null : predictPath(sim, tiltNow.x, tiltNow.z));
-  renderer.frame(frameMs, tiltNow);
+  const path = sim.finished ? null : predictPath(sim, lastTilt.x, lastTilt.z);
+  if (path && path.length) lastLandY = path[path.length - 1].y;
+  renderer.setAim(path, driveTarget ? { x: driveTarget.x, y: lastLandY, z: driveTarget.z } : null);
+  renderer.frame(frameMs, lastTilt);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;
 });
@@ -79,6 +110,12 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   },
   get fps() {
     return renderer.engine.getFps();
+  },
+  get target() {
+    return driveTarget;
+  },
+  get tilt() {
+    return lastTilt;
   },
   setTilt(x: number, z: number) {
     input.setForced({ x, z });

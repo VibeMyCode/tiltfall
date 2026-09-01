@@ -75,6 +75,14 @@ export const CONFIG = {
   laserOn: true,
   laserPoints: 30,
 
+  // Target control (owner design): the pointer drives the landing DISC
+  // directly (it snaps to the finger/cursor), and a PD controller steers the
+  // ball after it by synthesizing the same tilt input the sim always eats —
+  // the sim itself is unchanged. Keyboard keeps direct tilt.
+  targetControl: true,
+  targetGainDist: 420, // err units per full tilt (smaller = snappier chase)
+  targetGainVel: 2600, // velocity damping (bigger = less braking)
+
   // Camera.
   camHeight: 1500,
   camDist: 1020,

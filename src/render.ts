@@ -1,5 +1,6 @@
 // Babylon renderer — mirrors SimState, owns all juice (shards, shockwaves,
 // shake, hit-stop, glow). The sim never reads anything from here.
+import "@babylonjs/core/Culling/ray"; // side-effect: enables scene.createPickingRay
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -42,7 +43,9 @@ export interface Renderer {
   frame: (frameMs: number, tilt: { x: number; z: number }) => void;
   consumeHitStop: () => number;
   resetBlocks: () => void;
-  setAim: (points: { x: number; y: number; z: number }[] | null) => void;
+  setAim: (points: { x: number; y: number; z: number }[] | null, disc?: { x: number; y: number; z: number } | null) => void;
+  // Screen (client px) → sim XZ on the horizontal plane at sim height planeY.
+  screenToShaft: (clientX: number, clientY: number, planeY: number) => { x: number; z: number } | null;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): Renderer {
@@ -288,7 +291,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     resetBlocks() {
       for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
     },
-    setAim(points) {
+    setAim(points, disc) {
       if (!points || points.length < 2 || !C.laserOn) {
         thread.setEnabled(false);
         landDisc.setEnabled(false);
@@ -302,11 +305,22 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
         threadPts[i].set(src.x - C.shaftW / 2, -src.y, src.z - C.shaftD / 2);
       }
       thread = MeshBuilder.CreateLines("aimThread", { points: threadPts, instance: thread });
-      const land = points[points.length - 1];
+      // Disc: the user-driven target when steering, else the predicted landing.
+      const land = disc ?? points[points.length - 1];
       landDisc.position = toLocal(land.x, land.y - 3, land.z);
       // Nearer landing → denser disc (height reads for free).
       const dist = Math.max(0, land.y - points[0].y);
       landMat.alpha = 0.2 + 0.3 * (1 - Math.min(1, dist / 2600));
+    },
+    screenToShaft(clientX, clientY, planeY) {
+      const scaleX = engine.getRenderWidth() / Math.max(1, canvas.clientWidth);
+      const scaleY = engine.getRenderHeight() / Math.max(1, canvas.clientHeight);
+      const ray = scene.createPickingRay(clientX * scaleX, clientY * scaleY, null, camera);
+      const targetWorldY = -planeY; // sim y-down → babylon y-up
+      if (Math.abs(ray.direction.y) < 1e-6) return null;
+      const t = (targetWorldY - ray.origin.y) / ray.direction.y;
+      if (t <= 0) return null;
+      return { x: ray.origin.x + ray.direction.x * t, z: ray.origin.z + ray.direction.z * t };
     },
     frame(frameMs, tilt) {
       updateEffects(frameMs / 1000);

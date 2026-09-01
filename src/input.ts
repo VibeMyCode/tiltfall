@@ -5,9 +5,11 @@ import { CONFIG } from "./config";
 const clamp = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
 
 export interface InputState {
-  sample: (nowMs: number) => { x: number; z: number };
+  sample: (nowMs: number, ignorePointer?: boolean) => { x: number; z: number };
   current: (nowMs: number) => { x: number; z: number };
+  pointer: () => { active: boolean; cx: number; cy: number };
   setForced: (t: { x: number; z: number } | null) => void;
+  forced: () => { x: number; z: number } | null;
   invertY: () => boolean;
   toggleInvertY: () => boolean;
 }
@@ -94,19 +96,21 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
     current,
     // Called once per sim tick: eases keyboard tilt with the fixed dt, then
     // quantizes to integer millitilts (§3.1 — the sim sees only this).
-    sample(nowMs: number) {
+    sample(nowMs: number, ignorePointer = false) {
       const target = keyTarget();
       const maxStep = CONFIG.keyTiltRate * CONFIG.dt;
       const dx = target.x - keyX;
       const dz = target.z - keyZ;
       keyX += Math.abs(dx) <= maxStep ? dx : Math.sign(dx) * maxStep;
       keyZ += Math.abs(dz) <= maxStep ? dz : Math.sign(dz) * maxStep;
-      const t = current(nowMs);
+      const t = ignorePointer && !forced ? { x: clamp(keyX), z: clamp(keyZ) } : current(nowMs);
       return { x: Math.round(t.x * 1000) / 1000, z: Math.round(t.z * 1000) / 1000 };
     },
+    pointer: () => ({ active: dragging, cx: lastX, cy: lastY }),
     setForced(t) {
       forced = t;
     },
+    forced: () => forced,
     invertY: () => invY,
     toggleInvertY() {
       invY = !invY;

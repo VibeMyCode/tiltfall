@@ -1,4 +1,5 @@
 // DOM HUD + Results overlay (§2: UI is plain HTML/CSS, not Babylon GUI).
+import { CONFIG } from "./config";
 export interface UI {
   setHud: (timeS: number, score: number, combo: number) => void;
   showResults: (r: { timeS: number; score: number; broken: number; maxCombo: number }) => void;
@@ -18,6 +19,7 @@ export function createUI(onReplay: () => void, invert: { get: () => boolean; tog
   const renderInvert = (on: boolean) => (invertBtn.textContent = `Y ${on ? "⇅ INV" : "↓ STD"}`);
   renderInvert(invert.get());
   invertBtn.addEventListener("click", () => renderInvert(invert.toggle()));
+  if (CONFIG.targetControl) invertBtn.style.display = "none"; // pointing AT a target has no inversion
 
   const results = document.createElement("div");
   results.className = "results hidden";
