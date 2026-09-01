@@ -57,7 +57,9 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   driveTarget = null;
   const pt = input.pointer();
   if (CONFIG.targetControl && pt.active && !input.forced()) {
-    const m = renderer.screenToShaft(pt.cx, pt.cy, lastLandY);
+    // Pick on the BALL's plane: cursor movements map 1:1 to world around the
+    // ball (picking the deep landing plane made forward/back feel mushy).
+    const m = renderer.screenToShaft(pt.cx, pt.cy, sim.ball.y);
     if (m) driveTarget = { x: clampShaft(m.x, CONFIG.shaftW), z: clampShaft(m.z, CONFIG.shaftD) };
   }
 

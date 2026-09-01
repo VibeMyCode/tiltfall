@@ -55,7 +55,7 @@ export const CONFIG = {
   // (with the static world the camera faces -Z, so screen-right is world -X).
   tiltFullDragPx: 140,
   tiltReleaseEaseMs: 250,
-  keyTiltRate: 5.5, // tilt units per second toward keyboard target
+  keyTiltRate: 8, // tilt units per second toward keyboard target (desktop main)
   inputSignX: -1,
   inputSignZ: 1,
 

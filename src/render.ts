@@ -70,7 +70,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   scene.activeCamera = camera;
 
   const glow = new GlowLayer("glow", scene);
-  glow.intensity = 0.7;
+  glow.intensity = 0.55; // screen-space glow halos leak over occluders — keep modest
   const pipeline = new DefaultRenderingPipeline("pp", false, scene, [camera]);
   pipeline.bloomEnabled = true;
   pipeline.bloomWeight = 0.35;
@@ -132,7 +132,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     blockMeshes.set(b.id, mesh);
   }
 
-  const ballMat = makeMaterial("mBall", [0.35, 0.9, 1.0], 0.9);
+  const ballMat = makeMaterial("mBall", [0.35, 0.9, 1.0], 0.5); // dimmer: the
+  // glow halo was overpowering depth cues (owner: can't tell above/below tier)
   const ballMesh = MeshBuilder.CreateSphere("ball", { diameter: C.ballRadius * 2 }, scene);
   ballMesh.material = ballMat;
   ballMesh.parent = tower;
@@ -330,7 +331,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
       // Ball pulse: the impact feedback that replaced camera shake.
       ballPulse *= 0.9;
-      const glowK = 0.9 + ballPulse * 0.8;
+      const glowK = 0.5 + ballPulse * 0.8;
       ballMat.emissiveColor.set(0.35 * glowK, 0.9 * glowK, 1.0 * glowK);
       ballMesh.scaling.setAll(1 + ballPulse * 0.25);
 
