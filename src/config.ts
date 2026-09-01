@@ -5,16 +5,17 @@ export const CONFIG = {
   shaftD: 1200,
   ballRadius: 40,
 
-  // Tower shape (M1: 5 tiers, temporary inline generator until §4.3 levelgen).
+  // Tower shape. Air between tiers is a GAMEPLAY feature (owner feedback):
+  // the fall between tiers is where you see the ball and aim by tilting.
   tierCount: 5,
-  firstTierTopY: 800,
-  tierSpacing: 700,
-  floorY: 4400,
+  firstTierTopY: 1000,
+  tierSpacing: 1150,
+  floorY: 6900,
   spawn: { x: 650, y: 140, z: 650 },
   cell: 100,
   gridN: 8,
   gridX0: 200,
-  blockH: 100,
+  blockH: 100, // base piece height; levelgen also uses 60 (slab) and 150 (tall)
 
   // Physics (§3.3) — fixed timestep, semi-implicit Euler.
   dt: 1 / 120,
@@ -64,7 +65,13 @@ export const CONFIG = {
   camTiltZoom: 0.25, // zoom-OUT fraction at full tilt
   portraitTargetAspect: 1.15, // keep shaft width in frame on portrait phones
 
-  // Juice (render-only).
+  // Juice (render-only). No positional camera shake — it reads as an input
+  // glitch while tilting (owner feedback); breaks pulse the ball + FOV instead.
   shardImpactInherit: 0.45,
   hitStopMs: 40,
+
+  // Fog scales with the camera zoom (portrait/tilt) so zooming out never
+  // drowns the tower (owner feedback).
+  fogStart: 2000,
+  fogEnd: 7600,
 } as const;

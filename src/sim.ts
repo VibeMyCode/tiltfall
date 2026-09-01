@@ -22,12 +22,13 @@ export interface SimState {
   tick: number;
   ball: { x: number; y: number; z: number; vx: number; vy: number; vz: number };
   blocks: SimBlock[];
-  queue: { tick: number; id: number }[];
+  groupDamage: Record<number, number>;
+  queue: { tick: number; groupId: number }[];
   combo: number;
   maxCombo: number;
   lastBreakTick: number;
   score: number;
-  broken: number;
+  broken: number; // broken GROUPS (pieces), not segments
   restTicks: number;
   finished: boolean;
   finishTick: number;
@@ -38,6 +39,7 @@ export function createSim(layout: BlockDef[]): SimState {
     tick: 0,
     ball: { x: CONFIG.spawn.x, y: CONFIG.spawn.y, z: CONFIG.spawn.z, vx: 0, vy: 0, vz: 0 },
     blocks: layout.map((b) => ({ ...b, damage: 0, broken: false })),
+    groupDamage: {},
     queue: [],
     combo: 1,
     maxCombo: 1,
@@ -50,61 +52,71 @@ export function createSim(layout: BlockDef[]): SimState {
   };
 }
 
-function breakBlock(s: SimState, b: SimBlock, cascade: boolean, events: SimEvent[]): void {
-  if (b.broken) return;
-  b.broken = true;
+// Break a whole piece: all its segments shatter together; score once.
+function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimEvent[]): void {
+  let any = false;
+  let deps: number[] = [];
+  for (const b of s.blocks) {
+    if (b.groupId !== groupId || b.broken) continue;
+    b.broken = true;
+    any = true;
+    if (b.deps.length) deps = deps.concat(b.deps);
+    events.push({ kind: "break", id: b.id, cascade, bvx: s.ball.vx, bvy: s.ball.vy, bvz: s.ball.vz });
+    if (b.primary) {
+      // Combo (§3.5): one step per PIECE; points scale with piece size.
+      s.combo = s.tick - s.lastBreakTick <= CONFIG.comboWindowTicks ? Math.min(CONFIG.comboMax, s.combo + 1) : 1;
+      s.maxCombo = Math.max(s.maxCombo, s.combo);
+      s.lastBreakTick = s.tick;
+      s.score += CONFIG.points[b.type] * b.cells * s.combo;
+    }
+  }
+  if (!any) return;
   s.broken++;
-  // Combo (§3.5): any break within the window raises it, capped.
-  s.combo = s.tick - s.lastBreakTick <= CONFIG.comboWindowTicks ? Math.min(CONFIG.comboMax, s.combo + 1) : 1;
-  s.maxCombo = Math.max(s.maxCombo, s.combo);
-  s.lastBreakTick = s.tick;
-  s.score += CONFIG.points[b.type] * s.combo;
-  const { ball } = s;
-  events.push({ kind: "break", id: b.id, cascade, bvx: ball.vx, bvy: ball.vy, bvz: ball.vz });
-  // Support cascade (§4.2): dependents fall in a staggered chain.
-  b.deps.forEach((depId, i) => {
-    s.queue.push({ tick: s.tick + CONFIG.cascadeStepTicks * (i + 1), id: depId });
+  // Support cascade (§4.2): dependent pieces fall in a staggered chain.
+  deps.forEach((depGroup, i) => {
+    s.queue.push({ tick: s.tick + CONFIG.cascadeStepTicks * (i + 1), groupId: depGroup });
   });
 }
 
 function processQueue(s: SimState, events: SimEvent[]): void {
-  // Deterministic total order: by (tick, id) — §4.2.
-  s.queue.sort((a, b) => a.tick - b.tick || a.id - b.id);
+  // Deterministic total order: by (tick, groupId) — §4.2.
+  s.queue.sort((a, b) => a.tick - b.tick || a.groupId - b.groupId);
   while (s.queue.length && s.queue[0].tick <= s.tick) {
     const e = s.queue.shift()!;
-    const b = s.blocks.find((x) => x.id === e.id);
-    if (b) breakBlock(s, b, true, events);
+    breakGroup(s, e.groupId, true, events);
   }
 }
 
 function resolveBlocks(s: SimState, events: SimEvent[]): void {
   const { ball } = s;
   const r = CONFIG.ballRadius;
-  const hx = CONFIG.cell / 2 + r;
-  const hy = CONFIG.blockH / 2 + r;
-  // Ascending id order (§3.3 contact order; floor and walls resolve first).
+  // Ascending segment id order (§3.3 contact order; floor/walls first).
   for (const b of s.blocks) {
     if (b.broken) continue;
+    const hx = b.hx + r;
+    const hy = b.hy + r;
+    const hz = b.hz + r;
     const dx = ball.x - b.cx;
     const dy = ball.y - b.cy;
     const dz = ball.z - b.cz;
-    if (Math.abs(dx) >= hx || Math.abs(dy) >= hy || Math.abs(dz) >= hx) continue;
+    if (Math.abs(dx) >= hx || Math.abs(dy) >= hy || Math.abs(dz) >= hz) continue;
     // Minimum-penetration axis (corner ≈ face — §3.3).
     const px = hx - Math.abs(dx);
     const py = hy - Math.abs(dy);
-    const pz = hx - Math.abs(dz);
+    const pz = hz - Math.abs(dz);
     const axis: "x" | "y" | "z" = px <= py && px <= pz ? "x" : py <= pz ? "y" : "z";
     const vAxis = axis === "x" ? ball.vx : axis === "y" ? ball.vy : ball.vz;
     const j = Math.round((Math.abs(vAxis) * CONFIG.ballMass) / CONFIG.impulseScale);
-    if (b.damage + j >= b.threshold) {
+    const dmg = (s.groupDamage[b.groupId] ?? 0) + j;
+    if (dmg >= b.threshold) {
       // Break-through (§3.3): no bounce, punchy speed loss on the hit axis.
-      breakBlock(s, b, false, events);
+      breakGroup(s, b.groupId, false, events);
       if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
       else if (axis === "y") ball.vy *= CONFIG.breakThroughLoss;
       else ball.vz *= CONFIG.breakThroughLoss;
       continue;
     }
-    b.damage += j;
+    s.groupDamage[b.groupId] = dmg;
     if (axis === "x") {
       ball.x = b.cx + Math.sign(dx) * hx;
       ball.vx = -ball.vx * CONFIG.blockRestitution;
@@ -116,7 +128,7 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
       ball.vx *= CONFIG.friction;
       ball.vz *= CONFIG.friction;
     } else {
-      ball.z = b.cz + Math.sign(dz) * hx;
+      ball.z = b.cz + Math.sign(dz) * hz;
       ball.vz = -ball.vz * CONFIG.blockRestitution;
       ball.vx *= CONFIG.friction;
       ball.vy *= CONFIG.friction;

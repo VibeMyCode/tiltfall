@@ -58,8 +58,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
   scene.fogMode = Scene.FOGMODE_LINEAR;
   scene.fogColor = new Color3(0.05, 0.06, 0.1);
-  scene.fogStart = 1800;
-  scene.fogEnd = 5600;
+  scene.fogStart = C.fogStart;
+  scene.fogEnd = C.fogEnd;
 
   const camera = new TargetCamera("camera", new Vector3(0, 0, 0), scene);
   camera.fov = C.camFov;
@@ -106,49 +106,71 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   mkWall("w3", C.shaftW + wallT, wallT, 0, C.shaftD / 2 + wallT / 2, false); // camera side
 
   const MATS: Record<BlockType, StandardMaterial> = {
-    glass: makeMaterial("mGlass", [0.3, 0.75, 0.95], 0.25, 0.55),
+    glass: makeMaterial("mGlass", [0.3, 0.75, 0.95], 0.25, 0.62),
     stone: makeMaterial("mStone", [0.45, 0.47, 0.55], 0.1),
     support: makeMaterial("mSupport", [1.0, 0.65, 0.15], 0.5),
     dep: makeMaterial("mDep", [0.75, 0.55, 0.95], 0.3),
   };
+  const glassShardMat = makeMaterial("mGlassShard", [0.55, 0.85, 1.0], 0.5, 0.75);
+  glassShardMat.backFaceCulling = false;
 
   const blockInfo = new Map<number, BlockDef>();
   const blockMeshes = new Map<number, Mesh>();
   for (const b of layout) {
     blockInfo.set(b.id, b);
-    const mesh = MeshBuilder.CreateBox(`b${b.id}`, { size: C.cell - 6 }, scene);
+    const mesh = MeshBuilder.CreateBox(
+      `b${b.id}`,
+      { width: b.hx * 2 - 6, height: b.hy * 2 - 4, depth: b.hz * 2 - 6 },
+      scene,
+    );
     mesh.position = toLocal(b.cx, b.cy, b.cz);
     mesh.material = MATS[b.type];
     mesh.parent = tower;
     blockMeshes.set(b.id, mesh);
   }
 
+  const ballMat = makeMaterial("mBall", [0.35, 0.9, 1.0], 0.9);
   const ballMesh = MeshBuilder.CreateSphere("ball", { diameter: C.ballRadius * 2 }, scene);
-  ballMesh.material = makeMaterial("mBall", [0.35, 0.9, 1.0], 0.9);
+  ballMesh.material = ballMat;
   ballMesh.parent = tower;
 
   const shards: Shard[] = [];
   const rings: Ring[] = [];
-  let shakeAmp = 0;
   let fovKick = 0;
+  let ballPulse = 0; // replaces camera shake (owner: shake reads as a glitch)
   let pendingHitStop = 0;
 
   function spawnShards(b: BlockDef, e: SimEvent): void {
     const base = toLocal(b.cx, b.cy, b.cz);
-    const mat = MATS[b.type];
     const inherit = C.shardImpactInherit;
     const iv = e.cascade
       ? { x: 0, y: 260, z: 0 }
       : { x: (e.bvx ?? 0) * inherit, y: -(e.bvy ?? 0) * inherit * 0.7, z: (e.bvz ?? 0) * inherit };
     const heavy = b.type === "stone";
-    const n = heavy ? 9 : 14;
+    // Bigger segments shed more debris.
+    const volumeScale = Math.min(2, (b.hx * b.hz) / (2500 * 1.4));
+    const n = Math.round((heavy ? 9 : 12) * Math.max(1, volumeScale));
     for (let i = 0; i < n; i++) {
-      const size = heavy ? 26 + Math.random() * 18 : 12 + Math.random() * 18;
-      const m = MeshBuilder.CreateBox("sh", { size }, scene);
-      m.material = mat;
+      const glassy = !heavy;
+      let m: Mesh;
+      let size: number;
+      if (glassy) {
+        // Real-glass look: irregular flat triangles (a disc with 3 sides),
+        // random proportions, double-sided translucent material.
+        size = 16 + Math.random() * 26;
+        m = MeshBuilder.CreateDisc("sh", { radius: size, tessellation: 3 }, scene);
+        m.material = glassShardMat;
+        m.scaling.x = 0.5 + Math.random();
+        m.scaling.y = 0.5 + Math.random();
+        m.rotation.set(Math.random() * 3.14, Math.random() * 3.14, Math.random() * 3.14);
+      } else {
+        size = 26 + Math.random() * 18;
+        m = MeshBuilder.CreateBox("sh", { size }, scene);
+        m.material = MATS[b.type];
+      }
       m.parent = tower;
       m.position = base.add(
-        new Vector3((Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80),
+        new Vector3((Math.random() - 0.5) * b.hx * 1.6, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * b.hz * 1.6),
       );
       const maxLife = 1.4 + Math.random() * 0.8;
       shards.push({
@@ -156,8 +178,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
         vx: iv.x + (Math.random() - 0.5) * 800,
         vy: iv.y + 120 + Math.random() * 480,
         vz: iv.z + (Math.random() - 0.5) * 800,
-        rx: (Math.random() - 0.5) * 10,
-        rz: (Math.random() - 0.5) * 10,
+        rx: (Math.random() - 0.5) * (glassy ? 14 : 10),
+        rz: (Math.random() - 0.5) * (glassy ? 14 : 10),
         life: maxLife,
         maxLife,
         size,
@@ -229,8 +251,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           blockMeshes.get(e.id)?.setEnabled(false);
           const info = blockInfo.get(e.id);
           if (info) spawnShards(info, e);
-          shakeAmp = Math.min(34, shakeAmp + (e.cascade ? 12 : 7));
-          fovKick = Math.min(0.1, fovKick + (e.cascade ? 0.05 : 0.025));
+          ballPulse = 1;
+          fovKick = Math.min(0.08, fovKick + (e.cascade ? 0.04 : 0.02));
           if (e.cascade) pendingHitStop = C.hitStopMs;
         }
       }
@@ -249,6 +271,12 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       tower.rotation.z = C.visualTiltSignX * tilt.x * maxRad;
       tower.rotation.x = C.visualTiltSignZ * tilt.z * maxRad;
 
+      // Ball pulse: the impact feedback that replaced camera shake.
+      ballPulse *= 0.9;
+      const glowK = 0.9 + ballPulse * 0.8;
+      ballMat.emissiveColor.set(0.35 * glowK, 0.9 * glowK, 1.0 * glowK);
+      ballMesh.scaling.setAll(1 + ballPulse * 0.25);
+
       ballMesh.computeWorldMatrix(true);
       const p = ballMesh.getAbsolutePosition();
       // Zoom OUT with tilt, plus extra zoom-out on portrait aspect so the
@@ -257,6 +285,9 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       const aspectZoom = Math.max(1, C.portraitTargetAspect / Math.max(0.2, aspect));
       const tiltMag = Math.max(Math.abs(tilt.x), Math.abs(tilt.z));
       const zoom = (1 + C.camTiltZoom * tiltMag) * aspectZoom;
+      // Fog tracks the camera zoom — zooming out must never drown the tower.
+      scene.fogStart = C.fogStart * zoom;
+      scene.fogEnd = C.fogEnd * zoom;
       fovKick *= 0.9;
       camera.fov = C.camFov + fovKick;
       const gx = p.x;
@@ -268,10 +299,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       camAim.x += (p.x - camAim.x) * C.camSmooth;
       camAim.y += (p.y - camAim.y) * C.camSmooth;
       camAim.z += (p.z - camAim.z) * C.camSmooth;
-      const jx = shakeAmp > 0.5 ? (Math.random() - 0.5) * shakeAmp : 0;
-      const jy = shakeAmp > 0.5 ? (Math.random() - 0.5) * shakeAmp : 0;
-      shakeAmp *= 0.88;
-      camera.position.set(camPos.x + jx, camPos.y + jy, camPos.z);
+      camera.position.set(camPos.x, camPos.y, camPos.z);
       camera.setTarget(camAim);
     },
   };

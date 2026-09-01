@@ -190,7 +190,16 @@ runState)` function — never scattered `if (card)` checks.
 
 ### 4.1 Block types
 
-Unit cell 100×100×100. Per tier: a W×D grid (8–10 × 8–10) with 25–40% gap cells.
+Unit cell 100×100 in plan. Per tier: a W×D grid (8–10 × 8–10), sparse by design —
+open cells are the aiming targets during the inter-tier fall.
+
+**Piece shapes (owner amendment, 2026-09-01):** blocks are not uniform cubes.
+A PIECE occupies one or more cells — single, 1×2/2×1 bars, 2×2 slabs, L and П
+shapes — with a per-piece height of 60/100/150, and is represented in the sim as
+1–3 axis-aligned SEGMENTS sharing a groupId (collision stays sphere-vs-AABB).
+Damage accumulates per group; a piece breaks as a whole (all segments together),
+scores once (points × cell count), and cascades reference groupIds. Glass pieces
+shatter into flat triangular shards (render-only), stone into heavy chunks.
 
 | Type | Break threshold (impulse units) | Points | Notes |
 |---|---|---|---|
