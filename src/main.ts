@@ -272,6 +272,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   );
   renderer.setBallMode(sim.runOn.heavy ? "lead" : "skin");
   renderer.setTrail(Boolean(sim.runOn.agility) && !sim.finished);
+  renderer.setShield(sim.shields > 0);
   renderer.frame(frameMs, lastTilt);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth, sim.shields);
   ui.setJump(sim.jumpCd <= 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks);

@@ -12,6 +12,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
+import { TrailMesh } from "@babylonjs/core/Meshes/trailMesh";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -48,6 +49,7 @@ export interface Renderer {
   setSkin: (id: string) => void;
   setBallMode: (mode: "skin" | "lead") => void; // HEAVY booster look
   setTrail: (on: boolean) => void; // AGILITY comet tail
+  setShield: (on: boolean) => void; // shield aura around the ball
   jumpFx: (b: { x: number; y: number; z: number }) => void;
   setAim: (
     points: { x: number; y: number; z: number }[] | null,
@@ -225,6 +227,18 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   leadMat.diffuseColor = new Color3(0.42, 0.44, 0.5);
   leadMat.specularColor = new Color3(0.6, 0.6, 0.65);
   leadMat.emissiveColor = new Color3(0.06, 0.06, 0.08);
+  // Shield aura mesh: follows the ball each frame.
+  const shieldMesh = MeshBuilder.CreateSphere("shield", { diameter: C.ballRadius * 3.1, segments: 14 }, scene);
+  shieldMesh.parent = tower;
+  const shieldMat = new StandardMaterial("mShield", scene);
+  shieldMat.emissiveColor = new Color3(0.35, 0.95, 0.6);
+  shieldMat.diffuseColor = new Color3(0, 0, 0);
+  shieldMat.specularColor = new Color3(0, 0, 0);
+  shieldMat.alpha = 0.14;
+  shieldMat.backFaceCulling = false;
+  shieldMesh.material = shieldMat;
+  shieldMesh.setEnabled(false);
+
   const skinTextures = new Map<string, DynamicTexture>();
   function skinTexture(id: string): DynamicTexture | null {
     const def = SKINS[id];
@@ -246,10 +260,15 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   const rings: Ring[] = [];
   let ballPulse = 0; // replaces camera shake (owner: shake reads as a glitch)
   let pendingHitStop = 0;
-  // AGILITY comet tail: fading ghost spheres dropped behind the ball.
+  // AGILITY comet tail: one smooth translucent ribbon (TrailMesh), no
+  // textures, short (owner: the ghost-sphere version looked like a tadpole).
   let trailOn = false;
-  let trailClock = 0;
-  const trailBits: { mesh: Mesh; life: number }[] = [];
+  let trail: TrailMesh | null = null;
+  let trailMat: StandardMaterial | null = null;
+  // SHIELD aura: an ethereal breathing sphere around the ball while shields
+  // are up (owner).
+  let shieldOn = false;
+  let shieldPhase = 0;
 
   function spawnShards(b: BlockDef, e: SimEvent): void {
     const base = toLocal(b.cx, b.cy, b.cz);
@@ -489,7 +508,26 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       ballMesh.material = mode === "lead" ? leadMat : ballMat;
     },
     setTrail(on) {
+      if (on === trailOn) return;
       trailOn = on;
+      if (on) {
+        trail = new TrailMesh("agility-trail", ballMesh, scene, C.ballRadius * 0.75, 14, true);
+        trailMat = new StandardMaterial("mTrail", scene);
+        trailMat.emissiveColor = new Color3(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2]);
+        trailMat.diffuseColor = new Color3(0, 0, 0);
+        trailMat.specularColor = new Color3(0, 0, 0);
+        trailMat.alpha = 0.3;
+        trailMat.backFaceCulling = false;
+        trail.material = trailMat;
+      } else {
+        trail?.dispose();
+        trailMat?.dispose();
+        trail = null;
+        trailMat = null;
+      }
+    },
+    setShield(on) {
+      shieldOn = on;
     },
     jumpFx(b) {
       const ring = MeshBuilder.CreateDisc("jr", { radius: 55, tessellation: 28 }, scene);
@@ -552,26 +590,12 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       ballPulse *= 0.9;
       const glowK = skinBase.emissive + ballPulse * 0.5;
       ballMat.emissiveColor.set(skinBase.rgb[0] * glowK, skinBase.rgb[1] * glowK, skinBase.rgb[2] * glowK);
-      // AGILITY comet tail.
-      trailClock += frameMs;
-      if (trailOn && trailClock > 26) {
-        trailClock = 0;
-        const bit = MeshBuilder.CreateSphere("tb", { diameter: C.ballRadius * 1.5, segments: 6 }, scene);
-        bit.material = ballMat;
-        bit.parent = tower;
-        bit.position = ballMesh.position.clone();
-        trailBits.push({ mesh: bit, life: 0.4 });
-      }
-      for (let i = trailBits.length - 1; i >= 0; i--) {
-        const t = trailBits[i];
-        t.life -= frameMs / 1000;
-        if (t.life <= 0) {
-          t.mesh.dispose();
-          trailBits.splice(i, 1);
-          continue;
-        }
-        t.mesh.scaling.setAll(Math.max(0.05, t.life / 0.4));
-      }
+      // SHIELD aura: gentle breathing.
+      shieldPhase += frameMs / 420;
+      const breath = 1 + 0.06 * Math.sin(shieldPhase);
+      shieldMesh.setEnabled(shieldOn && ballMesh.isEnabled());
+      shieldMesh.position.copyFrom(ballMesh.position);
+      shieldMesh.scaling.setAll(breath);
       // Mines pulse with menace; walls follow the endless fall.
       const menace = 0.6 + 0.35 * Math.sin(performance.now() / 180);
       MATS.mine.emissiveColor.set(0.9 * menace, 0.08 * menace, 0.1 * menace);
