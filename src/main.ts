@@ -7,6 +7,9 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
+import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
@@ -67,7 +70,7 @@ const TILT_RELEASE_EASE_MS = 250;
 // Signs are set by LOOKING at the running game (SPEC §2), not derived.
 const VISUAL_TILT_SIGN_X = 1;
 const VISUAL_TILT_SIGN_Z = 1;
-const MAX_VISUAL_TILT_DEG = 12;
+const MAX_VISUAL_TILT_DEG = 8;
 
 // Camera.
 const CAM_HEIGHT = 1500;
@@ -159,6 +162,10 @@ interface SimEvent {
   kind: "break" | "reset";
   id?: number;
   cascade?: boolean;
+  // ball velocity at break time — shards inherit it so bursts read as impacts
+  bvx?: number;
+  bvy?: number;
+  bvz?: number;
 }
 
 const ball = { x: SPAWN.x, y: SPAWN.y, z: SPAWN.z, vx: 0, vy: 0, vz: 0 };
@@ -216,7 +223,7 @@ function breakBlock(b: Block, cascade: boolean): void {
   if (b.broken) return;
   b.broken = true;
   brokenCount++;
-  simEvents.push({ kind: "break", id: b.id, cascade });
+  simEvents.push({ kind: "break", id: b.id, cascade, bvx: ball.vx, bvy: ball.vy, bvz: ball.vz });
   if (b.type === "support") {
     // Dependents fall in a staggered chain — the M0 avalanche.
     DEP_CELLS.forEach((cell, i) => {
@@ -364,13 +371,31 @@ const scene = new Scene(engine);
 scene.clearColor = new Color4(0.05, 0.06, 0.1, 1);
 
 const light = new HemisphericLight("light", new Vector3(0.2, 1, 0.1));
-light.intensity = 1.2;
+light.intensity = 0.9;
 light.groundColor = new Color3(0.15, 0.15, 0.2);
+const sun = new DirectionalLight("sun", new Vector3(-0.35, -1, -0.25), scene);
+sun.intensity = 0.7;
+
+// Cheap depth cues now; the full art pass stays M5 (SPEC §9.1).
+scene.fogMode = Scene.FOGMODE_LINEAR;
+scene.fogColor = new Color3(0.05, 0.06, 0.1);
+scene.fogStart = 1800;
+scene.fogEnd = 5200;
 
 const camera = new TargetCamera("camera", new Vector3(0, 0, 0), scene);
 camera.fov = CAM_FOV;
 scene.activeCamera = camera;
+const glow = new GlowLayer("glow", scene);
+glow.intensity = 0.7;
+const pipeline = new DefaultRenderingPipeline("pp", false, scene, [camera]);
+pipeline.bloomEnabled = true;
+pipeline.bloomWeight = 0.35;
+pipeline.fxaaEnabled = true;
+
 const CAM_SMOOTH = 0.09; // per-frame lerp factor (render-only feel, not sim)
+const CAM_TILT_ZOOM = 0.15; // zoom-OUT fraction at full tilt (owner feedback)
+let fovKick = 0; // brief wide-angle punch on cascades
+let hitStopMs = 0; // micro time-freeze on cascade start
 const camPos = new Vector3(SPAWN.x, -SPAWN.y + CAM_HEIGHT, SPAWN.z + CAM_DIST);
 const camAim = new Vector3(SPAWN.x, -SPAWN.y, SPAWN.z);
 const camGoal = new Vector3(0, 0, 0);
@@ -396,7 +421,7 @@ floorMesh.parent = tower;
 
 const WALL_H = TOWER_T + 200;
 const WALL_T = 60;
-const wallMat = makeMaterial("mWall", [0.26, 0.3, 0.46], 0.25);
+const wallMat = makeMaterial("mWall", [0.26, 0.3, 0.46], 0.25, 0.45); // see-through shaft
 function makeWall(name: string, w: number, d: number, px: number, pz: number, visible: boolean): void {
   const wall = MeshBuilder.CreateBox(name, { width: w, height: WALL_H, depth: d }, scene);
   wall.position = new Vector3(px, -WALL_H / 2, pz);
@@ -439,35 +464,62 @@ interface Shard {
   rx: number;
   rz: number;
   life: number;
+  maxLife: number;
+  size: number;
 }
 const shards: Shard[] = [];
+interface Ring {
+  mesh: Mesh;
+  mat: StandardMaterial;
+  life: number;
+}
+const rings: Ring[] = [];
 let shakeAmp = 0;
 
-function spawnShards(b: Block): void {
+function spawnShards(b: Block, e: SimEvent): void {
   const base = toLocal(b.cx, b.cy, b.cz);
   const mat = MATS[b.type];
-  const n = 7;
+  // Direct hits burst along the ball's motion; cascade breaks pop outward.
+  const iv = e.cascade
+    ? { x: 0, y: 260, z: 0 }
+    : { x: (e.bvx ?? 0) * 0.35, y: -(e.bvy ?? 0) * 0.3, z: (e.bvz ?? 0) * 0.35 };
+  // Glass: many small chips. Stone: fewer heavy chunks.
+  const heavy = b.type === "stone";
+  const n = heavy ? 9 : 14;
   for (let i = 0; i < n; i++) {
-    const size = 20 + Math.random() * 16;
-    const m = MeshBuilder.CreateBox(`sh`, { size }, scene);
+    const size = heavy ? 26 + Math.random() * 18 : 12 + Math.random() * 18;
+    const m = MeshBuilder.CreateBox("sh", { size }, scene);
     m.material = mat;
     m.parent = tower;
     m.position = base.add(
-      new Vector3((Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70),
+      new Vector3((Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80),
     );
+    const maxLife = 1.4 + Math.random() * 0.8;
     shards.push({
       mesh: m,
-      vx: (Math.random() - 0.5) * 700,
-      vy: 150 + Math.random() * 450,
-      vz: (Math.random() - 0.5) * 700,
-      rx: (Math.random() - 0.5) * 8,
-      rz: (Math.random() - 0.5) * 8,
-      life: 1.15,
+      vx: iv.x + (Math.random() - 0.5) * 800,
+      vy: iv.y + 120 + Math.random() * 480,
+      vz: iv.z + (Math.random() - 0.5) * 800,
+      rx: (Math.random() - 0.5) * 10,
+      rz: (Math.random() - 0.5) * 10,
+      life: maxLife,
+      maxLife,
+      size,
     });
   }
+  // Expanding shockwave disc at the break point.
+  const ring = MeshBuilder.CreateDisc("ring", { radius: 70, tessellation: 32 }, scene);
+  const rmat = makeMaterial(`rm${b.id}${Math.random()}`, [1, 0.9, 0.6], 1);
+  rmat.alpha = 0.55;
+  ring.material = rmat;
+  ring.rotation.x = Math.PI / 2;
+  ring.position = base;
+  ring.parent = tower;
+  rings.push({ mesh: ring, mat: rmat, life: 0.4 });
 }
 
 function updateShards(dtS: number): void {
+  const floorTopLocal = -FLOOR_Y; // tower-local Y of the floor surface
   for (let i = shards.length - 1; i >= 0; i--) {
     const s = shards[i];
     s.life -= dtS;
@@ -480,10 +532,33 @@ function updateShards(dtS: number): void {
     s.mesh.position.x += s.vx * dtS;
     s.mesh.position.y += s.vy * dtS;
     s.mesh.position.z += s.vz * dtS;
+    // Debris bounces off the floor and settles — destruction leaves traces.
+    if (s.mesh.position.y < floorTopLocal + s.size / 2 && s.vy < 0) {
+      s.mesh.position.y = floorTopLocal + s.size / 2;
+      s.vy = -s.vy * 0.45;
+      s.vx *= 0.7;
+      s.vz *= 0.7;
+      s.rx *= 0.5;
+      s.rz *= 0.5;
+    }
     s.mesh.rotation.x += s.rx * dtS;
     s.mesh.rotation.z += s.rz * dtS;
-    const k = Math.min(1, s.life / 1.15);
+    // Full size for most of the life, quick shrink at the end.
+    const k = Math.min(1, (s.life / s.maxLife) * 4);
     s.mesh.scaling.setAll(k);
+  }
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const r = rings[i];
+    r.life -= dtS;
+    if (r.life <= 0) {
+      r.mesh.dispose();
+      r.mat.dispose();
+      rings.splice(i, 1);
+      continue;
+    }
+    const t = 1 - r.life / 0.4;
+    r.mesh.scaling.setAll(0.4 + t * 2.6);
+    r.mat.alpha = 0.55 * (1 - t);
   }
 }
 
@@ -493,7 +568,11 @@ let accumulator = 0;
 scene.onBeforeRenderObservable.add(() => {
   const nowMs = performance.now();
   const frameMs = Math.min(engine.getDeltaTime(), MAX_FRAME_MS);
-  accumulator += frameMs;
+  if (hitStopMs > 0) {
+    hitStopMs -= frameMs; // sim holds its breath; shards keep flying
+  } else {
+    accumulator += frameMs;
+  }
   while (accumulator >= DT_MS) {
     const input = sampleInput(nowMs);
     simStep(input.x, input.z);
@@ -506,8 +585,10 @@ scene.onBeforeRenderObservable.add(() => {
       const mesh = blockMeshes.get(e.id);
       const b = blocks.find((x) => x.id === e.id);
       if (mesh) mesh.setEnabled(false);
-      if (b) spawnShards(b);
-      shakeAmp = Math.min(30, shakeAmp + (e.cascade ? 10 : 6));
+      if (b) spawnShards(b, e);
+      shakeAmp = Math.min(34, shakeAmp + (e.cascade ? 12 : 7));
+      fovKick = Math.min(0.1, fovKick + (e.cascade ? 0.05 : 0.025));
+      if (e.cascade) hitStopMs = 40; // micro freeze: the avalanche lands a punch
     } else if (e.kind === "reset") {
       for (const [, mesh] of blockMeshes) mesh.setEnabled(true);
     }
@@ -527,7 +608,13 @@ scene.onBeforeRenderObservable.add(() => {
   // the lag keeps a fresh cascade in view for a beat as the ball drops away.
   ballMesh.computeWorldMatrix(true);
   const p = ballMesh.getAbsolutePosition();
-  camGoal.set(p.x, p.y + CAM_HEIGHT, p.z + CAM_DIST);
+  // Zoom OUT slightly with tilt (owner feedback: tilting must not feel like
+  // zooming in), and punch the FOV wide for a beat on cascades.
+  const tiltMag = Math.max(Math.abs(t.x), Math.abs(t.z));
+  const zoom = 1 + CAM_TILT_ZOOM * tiltMag;
+  fovKick *= 0.9;
+  camera.fov = CAM_FOV + fovKick;
+  camGoal.set(p.x, p.y + CAM_HEIGHT * zoom, p.z + CAM_DIST * zoom);
   camPos.x += (camGoal.x - camPos.x) * CAM_SMOOTH;
   camPos.y += (camGoal.y - camPos.y) * CAM_SMOOTH;
   camPos.z += (camGoal.z - camPos.z) * CAM_SMOOTH;
