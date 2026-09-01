@@ -82,6 +82,10 @@ export const CONFIG = {
   targetControl: true,
   targetGainDist: 420, // err units per full tilt (smaller = snappier chase)
   targetGainVel: 2600, // velocity damping (bigger = less braking)
+  // RELATIVE pointer drag (owner: a finger glued to the disc covers the
+  // action on phones): the drag MOVES the target from where the ball was at
+  // touch-start, amplified — the finger can rest anywhere on screen.
+  pointerDragAmplify: 1.6,
 
   // Camera.
   camHeight: 1500,
@@ -89,7 +93,8 @@ export const CONFIG = {
   camFov: 0.9,
   camSmooth: 0.09,
   camTiltZoom: 0, // input-linked zoom retired with the static world (owner: jerky)
-  portraitTargetAspect: 1.15, // keep shaft width in frame on portrait phones
+  portraitTargetAspect: 0.85, // portrait zoom-out target — smaller = bigger tower
+  // (the tower no longer tilts, so it can fill more of a phone screen)
 
   // Juice (render-only). No positional camera shake — it reads as an input
   // glitch while tilting (owner feedback); breaks pulse the ball + FOV instead.

@@ -31,6 +31,7 @@ let hitStopMs = 0;
 let lastTilt = { x: 0, z: 0 };
 let lastLandY = CONFIG.firstTierTopY + CONFIG.blockH;
 let driveTarget: { x: number; z: number } | null = null;
+let dragAnchor: { x: number; z: number } | null = null;
 
 const clampT = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
 const clampShaft = (v: number, max: number) => Math.min(max - CONFIG.ballRadius, Math.max(CONFIG.ballRadius, v));
@@ -53,14 +54,25 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   const nowMs = performance.now();
   const frameMs = Math.min(renderer.engine.getDeltaTime(), MAX_FRAME_MS);
 
-  // Map the pointer to a target on the current aim plane (once per frame).
-  driveTarget = null;
+  // RELATIVE pointer drag: at touch-start anchor the target on the ball,
+  // then move it by the amplified world-space drag delta (picked on the
+  // ball's plane, so screen motion maps 1:1 to world directions). The finger
+  // never has to sit on top of the action.
   const pt = input.pointer();
   if (CONFIG.targetControl && pt.active && !input.forced()) {
-    // Pick on the BALL's plane: cursor movements map 1:1 to world around the
-    // ball (picking the deep landing plane made forward/back feel mushy).
-    const m = renderer.screenToShaft(pt.cx, pt.cy, sim.ball.y);
-    if (m) driveTarget = { x: clampShaft(m.x, CONFIG.shaftW), z: clampShaft(m.z, CONFIG.shaftD) };
+    if (!dragAnchor) dragAnchor = { x: sim.ball.x, z: sim.ball.z };
+    const m0 = renderer.screenToShaft(pt.ox, pt.oy, sim.ball.y);
+    const m1 = renderer.screenToShaft(pt.cx, pt.cy, sim.ball.y);
+    if (m0 && m1) {
+      const amp = CONFIG.pointerDragAmplify;
+      driveTarget = {
+        x: clampShaft(dragAnchor.x + (m1.x - m0.x) * amp, CONFIG.shaftW),
+        z: clampShaft(dragAnchor.z + (m1.z - m0.z) * amp, CONFIG.shaftD),
+      };
+    }
+  } else {
+    dragAnchor = null;
+    driveTarget = null;
   }
 
   if (hitStopMs > 0) {

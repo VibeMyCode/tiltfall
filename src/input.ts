@@ -7,7 +7,7 @@ const clamp = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
 export interface InputState {
   sample: (nowMs: number, ignorePointer?: boolean) => { x: number; z: number };
   current: (nowMs: number) => { x: number; z: number };
-  pointer: () => { active: boolean; cx: number; cy: number };
+  pointer: () => { active: boolean; cx: number; cy: number; ox: number; oy: number };
   setForced: (t: { x: number; z: number } | null) => void;
   forced: () => { x: number; z: number } | null;
   invertY: () => boolean;
@@ -106,7 +106,7 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
       const t = ignorePointer && !forced ? { x: clamp(keyX), z: clamp(keyZ) } : current(nowMs);
       return { x: Math.round(t.x * 1000) / 1000, z: Math.round(t.z * 1000) / 1000 };
     },
-    pointer: () => ({ active: dragging, cx: lastX, cy: lastY }),
+    pointer: () => ({ active: dragging, cx: lastX, cy: lastY, ox: originX, oy: originY }),
     setForced(t) {
       forced = t;
     },
