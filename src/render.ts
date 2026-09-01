@@ -12,7 +12,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
-import { TrailMesh } from "@babylonjs/core/Meshes/trailMesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -260,11 +260,14 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   const rings: Ring[] = [];
   let ballPulse = 0; // replaces camera shake (owner: shake reads as a glitch)
   let pendingHitStop = 0;
-  // AGILITY comet tail: one smooth translucent ribbon (TrailMesh), no
-  // textures, short (owner: the ghost-sphere version looked like a tadpole).
+  // AGILITY comet tail: a hand-built ribbon over the ball's recent positions
+  // with PER-VERTEX alpha — opaque at the ball, fading to zero at the tip
+  // (owner: TrailMesh's flat alpha cut off too abruptly).
+  const TRAIL_SEGMENTS = 26;
   let trailOn = false;
-  let trail: TrailMesh | null = null;
+  let trailRibbon: Mesh | null = null;
   let trailMat: StandardMaterial | null = null;
+  const trailHistory: Vector3[] = [];
   // SHIELD aura: an ethereal breathing sphere around the ball while shields
   // are up (owner).
   let shieldOn = false;
@@ -510,20 +513,20 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     setTrail(on) {
       if (on === trailOn) return;
       trailOn = on;
-      if (on) {
-        trail = new TrailMesh("agility-trail", ballMesh, scene, C.ballRadius * 0.75, 14, true);
+      if (!on) {
+        trailRibbon?.dispose();
+        trailMat?.dispose();
+        trailRibbon = null;
+        trailMat = null;
+        trailHistory.length = 0;
+      } else {
         trailMat = new StandardMaterial("mTrail", scene);
         trailMat.emissiveColor = new Color3(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2]);
         trailMat.diffuseColor = new Color3(0, 0, 0);
         trailMat.specularColor = new Color3(0, 0, 0);
-        trailMat.alpha = 0.3;
         trailMat.backFaceCulling = false;
-        trail.material = trailMat;
-      } else {
-        trail?.dispose();
-        trailMat?.dispose();
-        trail = null;
-        trailMat = null;
+        trailMat.disableLighting = true;
+        trailMat.alpha = 0.999; // < 1 so the mesh renders in the alpha pass
       }
     },
     setShield(on) {
@@ -590,6 +593,51 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       ballPulse *= 0.9;
       const glowK = skinBase.emissive + ballPulse * 0.5;
       ballMat.emissiveColor.set(skinBase.rgb[0] * glowK, skinBase.rgb[1] * glowK, skinBase.rgb[2] * glowK);
+      // AGILITY ribbon: rebuilt each frame from the position history, with a
+      // linear alpha ramp (1 at the ball → 0 at the tip).
+      if (trailOn && trailMat) {
+        trailHistory.unshift(ballMesh.position.clone());
+        if (trailHistory.length > TRAIL_SEGMENTS) trailHistory.length = TRAIL_SEGMENTS;
+        trailRibbon?.dispose();
+        trailRibbon = null;
+        if (trailHistory.length > 3) {
+          const half = C.ballRadius * 0.8;
+          const positions: number[] = [];
+          const colors: number[] = [];
+          const indices: number[] = [];
+          for (let i = 0; i < trailHistory.length; i++) {
+            const p = trailHistory[i];
+            const prev = trailHistory[Math.max(0, i - 1)];
+            const next = trailHistory[Math.min(trailHistory.length - 1, i + 1)];
+            let dx = next.x - prev.x;
+            let dz = next.z - prev.z;
+            const len = Math.sqrt(dx * dx + dz * dz) || 1;
+            dx /= len;
+            dz /= len;
+            const k = 1 - i / (trailHistory.length - 1); // 1 at ball → 0 at tip
+            const w = half * k;
+            positions.push(p.x - dz * w, p.y, p.z + dx * w);
+            positions.push(p.x + dz * w, p.y, p.z - dx * w);
+            const a = k * k * 0.85; // smooth quadratic fade
+            for (let s = 0; s < 2; s++) colors.push(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2], a);
+            if (i > 0) {
+              const b = (i - 1) * 2;
+              indices.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+            }
+          }
+          trailRibbon = new Mesh("agility-ribbon", scene);
+          const vd = new VertexData();
+          vd.positions = positions;
+          vd.colors = colors;
+          vd.indices = indices;
+          vd.applyToMesh(trailRibbon);
+          trailRibbon.material = trailMat;
+          trailRibbon.parent = tower;
+          trailRibbon.hasVertexAlpha = true;
+          trailRibbon.isPickable = false;
+        }
+      }
+
       // SHIELD aura: gentle breathing.
       shieldPhase += frameMs / 420;
       const breath = 1 + 0.06 * Math.sin(shieldPhase);

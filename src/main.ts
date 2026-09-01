@@ -10,7 +10,6 @@ import {
   jumpPowerAt,
   levelCost,
   rollDaily,
-  shieldsAt,
   skinsAt,
   trackBoosterUse,
   trackEvents,
@@ -61,10 +60,11 @@ if (daily.date !== todayStr) daily = freshDaily(todayStr);
 const dailyTasks = rollDaily(todayStr);
 let banked = false;
 
+// Shields come ONLY from the SHIELD booster the player activates by hand
+// (owner): no passive/level shields that would auto-arm every run.
 const simOpts = () => ({
   jumpPower: jumpPowerAt(level),
   jumpCooldownTicks: jumpCooldownAt(level),
-  shields: shieldsAt(level),
 });
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
@@ -151,7 +151,7 @@ function showResultsNow(): void {
       cost: () => levelCost(level),
       jumpPower: () => jumpPowerAt(level),
       jumpCdS: () => jumpCooldownAt(level) * CONFIG.dt,
-      shields: () => shieldsAt(level),
+      shields: () => 0, // levels no longer grant passive shields (owner)
       buy: () => {
         const cost = levelCost(level);
         if (bank < cost) return false;
