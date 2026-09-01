@@ -1,32 +1,96 @@
 // Boot + fixed-timestep game loop (§2 override of babylon.md's frame-delta
-// guidance): gameplay advances ONLY through sim.step.
+// guidance): gameplay advances ONLY through sim.step. No mid-run stops —
+// boosters are bought in the post-run shop and activated on demand (owner).
 import "./style.css";
 import { CONFIG } from "./config";
-import { gateOffers } from "./cards";
-import { buildTower, validateTower } from "./levelgen";
-import { applyCard, createSim, predictPath, step, type SimState } from "./sim";
+import { BOOSTER_ORDER, type BoosterId } from "./boosters";
+import { buildTower } from "./levelgen";
+import { activateBooster, createSim, predictPath, step, type SimState } from "./sim";
 import { attachInput } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
 
-const M1_SEED = 20260901; // fixed seed for M1 (date-seeded Daily arrives in M4)
+const M1_SEED = 20260901;
 const DT_MS = 1000 * CONFIG.dt;
 const MAX_FRAME_MS = 100;
 
+// --- Persistence (bank, booster inventory, best) ---------------------------
+function load<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : (JSON.parse(v) as T);
+  } catch {
+    return fallback;
+  }
+}
+function save(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // storage unavailable — session-only progress
+  }
+}
+let bank = load<number>("tf.bank", 0);
+let inventory = load<Record<BoosterId, number>>("tf.inv", { quake: 0, chain: 0, x2: 0, heavy: 0, bounce: 0, feather: 0 });
+let best = load<{ score: number; combo: number }>("tf.best", { score: 0, combo: 1 });
+let banked = false; // guards double-banking a finished run
+
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const layout = buildTower(M1_SEED);
-// Probe validation + par (§4.3) — runs the real sim 16 times at boot.
-const validation = validateTower(M1_SEED, layout);
-console.info(`[tiltfall] tower validation: ${validation.passed}/16 probes, par ${(validation.parTicks * CONFIG.dt).toFixed(1)}s`);
-let sim: SimState = createSim(layout, { parTicks: validation.parTicks });
+let sim: SimState = createSim(layout);
 const input = attachInput(canvas);
 const renderer = createRenderer(canvas, layout);
+
 const newRun = () => {
-  sim = createSim(layout, { parTicks: validation.parTicks });
+  sim = createSim(layout);
+  banked = false;
   renderer.resetBlocks();
   ui.hideResults();
 };
-const ui = createUI(newRun, { get: () => input.invertY(), toggle: () => input.toggleInvertY() });
+
+function tryActivate(id: BoosterId): void {
+  if (sim.finished) return;
+  if ((sim.boosterTimers[id] ?? 0) > 0) return; // already running
+  if ((inventory[id] ?? 0) <= 0) return;
+  inventory[id]--;
+  save("tf.inv", inventory);
+  activateBooster(sim, id);
+}
+
+const ui = createUI(newRun, { get: () => input.invertY(), toggle: () => input.toggleInvertY() }, tryActivate);
+
+function onFinish(): void {
+  if (banked) return;
+  banked = true;
+  bank += sim.score;
+  const newBest = sim.score > best.score || sim.maxCombo > best.combo;
+  best = { score: Math.max(best.score, sim.score), combo: Math.max(best.combo, sim.maxCombo) };
+  save("tf.bank", bank);
+  save("tf.best", best);
+  ui.showResults({
+    timeS: sim.finishTick * CONFIG.dt,
+    score: sim.score,
+    broken: sim.broken,
+    maxCombo: sim.maxCombo,
+    bestScore: best.score,
+    bestCombo: best.combo,
+    newBest,
+    shop: {
+      get bank() {
+        return bank;
+      },
+      inventory,
+      buy(id) {
+        const price = CONFIG.boosters[id].price;
+        if (bank < price) return;
+        bank -= price;
+        inventory[id] = (inventory[id] ?? 0) + 1;
+        save("tf.bank", bank);
+        save("tf.inv", inventory);
+      },
+    },
+  });
+}
 
 let accumulator = 0;
 let hitStopMs = 0;
@@ -38,9 +102,8 @@ let dragAnchor: { x: number; z: number } | null = null;
 const clampT = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
 const clampShaft = (v: number, max: number) => Math.min(max - CONFIG.ballRadius, Math.max(CONFIG.ballRadius, v));
 
-// Target control (owner design): the pointer drives the landing disc; this
-// PD controller synthesizes ordinary tilt input that chases it, so the sim
-// contract (tilt in, deterministic ticks) is untouched.
+// Target control: the pointer drives the landing disc; a PD controller
+// synthesizes ordinary tilt input that chases it (sim contract untouched).
 function controlTilt(kb: { x: number; z: number }): { x: number; z: number } {
   if (!driveTarget) return kb;
   const b = sim.ball;
@@ -56,10 +119,8 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   const nowMs = performance.now();
   const frameMs = Math.min(renderer.engine.getDeltaTime(), MAX_FRAME_MS);
 
-  // RELATIVE pointer drag: at touch-start anchor the target on the ball,
-  // then move it by the amplified world-space drag delta (picked on the
-  // ball's plane, so screen motion maps 1:1 to world directions). The finger
-  // never has to sit on top of the action.
+  // RELATIVE pointer drag (owner): anchor the target on the ball at
+  // touch-start, then move it by the amplified world-space drag delta.
   const pt = input.pointer();
   if (CONFIG.targetControl && pt.active && !input.forced()) {
     if (!dragAnchor) dragAnchor = { x: sim.ball.x, z: sim.ball.z };
@@ -77,10 +138,12 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     driveTarget = null;
   }
 
-  if (hitStopMs > 0 || ui.isDraftOpen()) {
-    hitStopMs = Math.max(0, hitStopMs - frameMs); // sim frozen; wall time never counts
+  // Chain-bomb showcase (owner): cascades play out in slow motion.
+  const slowMo = (sim.boosterTimers.chain ?? 0) > 0 && sim.queue.length > 0;
+  if (hitStopMs > 0) {
+    hitStopMs = Math.max(0, hitStopMs - frameMs);
   } else {
-    accumulator += frameMs;
+    accumulator += frameMs * (slowMo ? CONFIG.slowMoScale : 1);
   }
   while (accumulator >= DT_MS) {
     const s = CONFIG.targetControl ? controlTilt(input.sample(nowMs, true)) : input.sample(nowMs);
@@ -89,22 +152,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     if (events.length) {
       renderer.applyEvents(events);
       hitStopMs = Math.max(hitStopMs, renderer.consumeHitStop());
-      for (const e of events) {
-        if (e.kind === "gate" && e.gateIndex !== undefined) {
-          const idx = e.gateIndex;
-          ui.showDraft(gateOffers(M1_SEED, idx), (card) => applyCard(sim, card));
-          accumulator = 0;
-        } else if (e.kind === "finish") {
-          ui.showResults({
-            timeS: sim.finishTick * CONFIG.dt,
-            score: sim.score,
-            broken: sim.broken,
-            maxCombo: sim.maxCombo,
-            parBonus: sim.parBonus,
-          });
-        }
-      }
-      if (ui.isDraftOpen()) break;
+      if (events.some((e) => e.kind === "finish")) onFinish();
     }
     accumulator -= DT_MS;
   }
@@ -119,6 +167,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   );
   renderer.frame(frameMs, lastTilt);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo);
+  ui.setBoosterBar(inventory, sim.boosterTimers);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;
 });
 
@@ -145,23 +194,26 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   get tilt() {
     return lastTilt;
   },
-  get gateOpen() {
-    return ui.isDraftOpen();
-  },
   get tick() {
     return sim.tick;
   },
   get steerable() {
-    return !ui.isDraftOpen() && sim.gatePhase === "none" && !sim.finished;
+    return !sim.finished;
   },
-  get gatesPassed() {
-    return sim.gatesPassed;
+  get bank() {
+    return bank;
   },
-  get card() {
-    return sim.activeCard;
+  get inventory() {
+    return { ...inventory };
   },
-  pick(i: number) {
-    ui.pickDraft(i);
+  get timers() {
+    return { ...sim.boosterTimers };
+  },
+  grant(id: BoosterId, n = 1) {
+    inventory[id] = (inventory[id] ?? 0) + n;
+  },
+  activate(i: number) {
+    tryActivate(BOOSTER_ORDER[i]);
   },
   setTilt(x: number, z: number) {
     input.setForced({ x, z });
@@ -170,9 +222,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     input.setForced(null);
   },
   replay() {
-    sim = createSim(layout);
-    renderer.resetBlocks();
-    ui.hideResults();
+    newRun();
   },
 };
 

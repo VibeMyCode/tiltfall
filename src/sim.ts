@@ -1,8 +1,8 @@
-// Pure simulation (§3.3, §3.4, §4.2, §5.4): zero Babylon imports, no
-// Math.random, no Date, no transcendentals. Same layout + same input log +
-// same card picks ⇒ same run.
+// Pure simulation (§3.3, §4.2, §5.4): zero Babylon imports, no Math.random,
+// no Date, no transcendentals. Same layout + same input log + same booster
+// activations ⇒ same run. No mid-run interruptions (owner: gates removed).
 import { CONFIG } from "./config";
-import { cardParams, type CardId } from "./cards";
+import { boosterParams, type BoosterId } from "./boosters";
 import type { BlockDef } from "./levelgen";
 
 export interface SimBlock extends BlockDef {
@@ -10,9 +10,8 @@ export interface SimBlock extends BlockDef {
 }
 
 export interface SimEvent {
-  kind: "break" | "finish" | "gate" | "bumper" | "spike" | "pity";
+  kind: "break" | "finish" | "bumper" | "spike" | "pity";
   id?: number;
-  gateIndex?: number;
   cascade?: boolean;
   bvx?: number;
   bvy?: number;
@@ -26,31 +25,20 @@ export interface SimState {
   groupDamage: Record<number, number>;
   queue: { tick: number; groupId: number }[];
   combo: number;
-  comboChain: number; // pieces broken in the current unbroken chain
+  comboChain: number;
   maxCombo: number;
   lastBreakTick: number;
   score: number;
   broken: number;
   finished: boolean;
   finishTick: number;
-  parTicks: number;
-  parBonus: number;
-  // Draft gates (§3.4)
-  gatesPassed: number;
-  gatePhase: "none" | "capture" | "wait";
-  gateT: number;
-  gateFrom: { x: number; y: number; z: number };
-  gateY: number;
-  activeCard: CardId | null;
-  pierceLeft: number;
-  // Anti-stall (§3.2)
-  stallTicks: number;
+  boosterTimers: Partial<Record<BoosterId, number>>;
   tierEnterTick: number;
   currentTier: number;
   pityDisabled: boolean;
 }
 
-export function createSim(layout: BlockDef[], opts?: { parTicks?: number; pityDisabled?: boolean }): SimState {
+export function createSim(layout: BlockDef[], opts?: { pityDisabled?: boolean }): SimState {
   return {
     tick: 0,
     ball: { x: CONFIG.spawn.x, y: CONFIG.spawn.y, z: CONFIG.spawn.z, vx: 0, vy: 0, vz: 0 },
@@ -65,20 +53,16 @@ export function createSim(layout: BlockDef[], opts?: { parTicks?: number; pityDi
     broken: 0,
     finished: false,
     finishTick: 0,
-    parTicks: opts?.parTicks ?? 0,
-    parBonus: 0,
-    gatesPassed: 0,
-    gatePhase: "none",
-    gateT: 0,
-    gateFrom: { x: 0, y: 0, z: 0 },
-    gateY: 0,
-    activeCard: null,
-    pierceLeft: 0,
-    stallTicks: 0,
+    boosterTimers: {},
     tierEnterTick: 0,
     currentTier: 0,
     pityDisabled: opts?.pityDisabled ?? false,
   };
+}
+
+// Activate an owned booster (main handles inventory; replay logs (tick, id)).
+export function activateBooster(s: SimState, id: BoosterId): void {
+  s.boosterTimers[id] = CONFIG.boosterTicks;
 }
 
 const tierBaseY = (tier: number): number => CONFIG.firstTierTopY + tier * CONFIG.tierSpacing + CONFIG.blockH;
@@ -88,8 +72,8 @@ const tierBaseY = (tier: number): number => CONFIG.firstTierTopY + tier * CONFIG
 function queueBlast(s: SimState, cx: number, cy: number, cz: number, radius: number, delayStep: number): void {
   const dist = new Map<number, number>();
   for (const b of s.blocks) {
-    if (b.broken) continue;
-    if (Math.abs(b.cy - cy) > 400) continue; // same tier band
+    if (b.broken || b.threshold === Infinity) continue;
+    if (Math.abs(b.cy - cy) > 400) continue;
     const dx = b.cx - cx;
     const dz = b.cz - cz;
     const d = Math.sqrt(dx * dx + dz * dz);
@@ -102,9 +86,8 @@ function queueBlast(s: SimState, cx: number, cy: number, cz: number, radius: num
     .forEach(([g], i) => s.queue.push({ tick: s.tick + delayStep * (i + 1), groupId: g }));
 }
 
-// Break a whole piece; score once; bombs blast, shockwave card ripples.
 function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimEvent[]): void {
-  const P = cardParams(s.activeCard);
+  const P = boosterParams(s.boosterTimers);
   let any = false;
   for (const b of s.blocks) {
     if (b.groupId !== groupId || b.broken) continue;
@@ -112,7 +95,7 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
     any = true;
     events.push({ kind: "break", id: b.id, cascade, bvx: s.ball.vx, bvy: s.ball.vy, bvz: s.ball.vz });
     if (b.primary) {
-      if (s.tick - s.lastBreakTick <= P.comboWindowTicks) {
+      if (s.tick - s.lastBreakTick <= CONFIG.comboWindowTicks) {
         s.combo = Math.min(CONFIG.comboMax, s.combo + 1);
       } else {
         s.combo = 1;
@@ -121,12 +104,11 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
       s.comboChain++;
       s.maxCombo = Math.max(s.maxCombo, s.combo);
       s.lastBreakTick = s.tick;
-      s.score += (CONFIG.points[b.type] ?? 0) * b.cells * s.combo;
+      s.score += (CONFIG.points[b.type] ?? 0) * b.cells * s.combo * P.scoreMul;
       if (b.type === "bomb") {
         queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * P.blastMul, CONFIG.cascadeStepTicks);
-      } else if (!cascade && P.shock) {
-        const cells = CONFIG.cards.shockBaseCells + Math.floor(s.comboChain / CONFIG.cards.shockChainPer);
-        queueBlast(s, b.cx, b.cy, b.cz, cells * CONFIG.cell + 1, CONFIG.cards.shockDelayTicks);
+      } else if (!cascade && P.quakeCells > 0) {
+        queueBlast(s, b.cx, b.cy, b.cz, P.quakeCells * CONFIG.cell, 6);
       }
     }
   }
@@ -143,7 +125,7 @@ function processQueue(s: SimState, events: SimEvent[]): void {
 
 function resolveBlocks(s: SimState, events: SimEvent[]): void {
   const { ball } = s;
-  const P = cardParams(s.activeCard);
+  const P = boosterParams(s.boosterTimers);
   const r = CONFIG.ballRadius;
   for (const b of s.blocks) {
     if (b.broken) continue;
@@ -162,12 +144,7 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
     const j = Math.round((Math.abs(vAxis) * CONFIG.ballMass * P.massMul) / CONFIG.impulseScale);
     const dmg = (s.groupDamage[b.groupId] ?? 0) + j;
     const breakable = b.threshold !== Infinity;
-    if (breakable && (dmg >= b.threshold || (P.pierce && s.pierceLeft > 0))) {
-      if (P.pierce && s.pierceLeft > 0) {
-        s.pierceLeft--;
-        breakGroup(s, b.groupId, false, events);
-        continue; // Piercer: no bounce, no speed loss at all
-      }
+    if (breakable && dmg >= b.threshold) {
       breakGroup(s, b.groupId, false, events);
       if (axis === "y" && vAxis > 0) ball.vy = -ball.vy * P.breakBounce;
       else if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
@@ -176,11 +153,19 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
       continue;
     }
     if (breakable) s.groupDamage[b.groupId] = dmg;
-    // Bounce response. Bumpers launch; spikes punish.
-    const rest =
-      b.type === "bumper"
-        ? CONFIG.bumperRestitution
-        : Math.min(0.95, CONFIG.blockRestitution + P.restAdd);
+    if (b.type === "spike") {
+      // Impaled (owner): the ball stops dead on a spike; combo dies with it.
+      ball.x = b.cx + Math.sign(dx || 1) * (axis === "x" ? hx : Math.abs(dx));
+      if (axis === "y") ball.y = b.cy + Math.sign(dy) * hy;
+      ball.vx *= CONFIG.spikeStop;
+      ball.vy = axis === "y" ? -ball.vy * CONFIG.spikeStop : ball.vy * CONFIG.spikeStop;
+      ball.vz *= CONFIG.spikeStop;
+      s.combo = 1;
+      s.comboChain = 0;
+      events.push({ kind: "spike", id: b.id });
+      continue;
+    }
+    const rest = b.type === "bumper" ? CONFIG.bumperRestitution : CONFIG.blockRestitution;
     if (axis === "x") {
       ball.x = b.cx + Math.sign(dx) * hx;
       ball.vx = -ball.vx * rest;
@@ -198,71 +183,27 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
       ball.vy *= CONFIG.friction;
     }
     if (b.type === "bumper") {
-      s.score += CONFIG.bumperPoints; // flat, never multiplied (§3.5)
+      // A launcher must LAUNCH (owner): guarantee a violent exit speed.
+      if (axis === "x") ball.vx = Math.sign(ball.vx) * Math.max(Math.abs(ball.vx), CONFIG.bumperMinLaunch);
+      else if (axis === "y") ball.vy = Math.sign(ball.vy) * Math.max(Math.abs(ball.vy), CONFIG.bumperMinLaunch);
+      else ball.vz = Math.sign(ball.vz) * Math.max(Math.abs(ball.vz), CONFIG.bumperMinLaunch);
+      s.score += CONFIG.bumperPoints;
       events.push({ kind: "bumper", id: b.id });
-    } else if (b.type === "spike") {
-      s.combo = 1;
-      s.comboChain = 0;
-      ball.vx *= CONFIG.spikeSlow;
-      ball.vy *= CONFIG.spikeSlow;
-      ball.vz *= CONFIG.spikeSlow;
-      events.push({ kind: "spike", id: b.id });
     }
   }
 }
 
-// Anti-stall (§3.2): nudge toward the nearest open cell of the current tier.
-function antiStall(s: SimState, events: SimEvent[]): void {
+// Pity only (§3.2, owner-tuned): no nudging — a tier that holds the ball
+// for pityTicks auto-shatters, spectacularly.
+function pity(s: SimState, events: SimEvent[]): void {
   const C = CONFIG;
-  const { ball } = s;
-  const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz);
-  const onFloor = ball.y + C.ballRadius >= C.floorY - 1;
-  const tier = Math.max(0, Math.min(C.tierCount - 1, Math.floor((ball.y - C.firstTierTopY) / C.tierSpacing)));
+  const tier = Math.max(0, Math.min(C.tierCount - 1, Math.floor((s.ball.y - C.firstTierTopY) / C.tierSpacing)));
   if (tier !== s.currentTier) {
     s.currentTier = tier;
     s.tierEnterTick = s.tick;
   }
-  s.stallTicks = !onFloor && speed < C.restSpeed ? s.stallTicks + 1 : 0;
-  if (s.stallTicks > C.stallTicks) {
-    s.stallTicks = 0;
-    // Deterministic target: the open cell nearest to the ball (lowest index ties).
-    const covered = new Array(C.gridN * C.gridN).fill(false);
-    for (const b of s.blocks) {
-      if (b.broken) continue;
-      if (Math.abs(b.cy - (tierBaseY(tier) - 50)) > 200) continue;
-      const c0 = Math.round((b.cx - b.hx - C.gridX0) / C.cell);
-      const r0 = Math.round((b.cz - b.hz - C.gridX0) / C.cell);
-      const cols = Math.round((b.hx * 2) / C.cell);
-      const rows = Math.round((b.hz * 2) / C.cell);
-      for (let rr = r0; rr < r0 + rows; rr++)
-        for (let cc = c0; cc < c0 + cols; cc++)
-          if (rr >= 0 && rr < C.gridN && cc >= 0 && cc < C.gridN) covered[rr * C.gridN + cc] = true;
-    }
-    let best = -1;
-    let bestD = Infinity;
-    for (let i = 0; i < covered.length; i++) {
-      if (covered[i]) continue;
-      const cx = C.gridX0 + (i % C.gridN) * C.cell + C.cell / 2;
-      const cz = C.gridX0 + Math.floor(i / C.gridN) * C.cell + C.cell / 2;
-      const d = (cx - ball.x) * (cx - ball.x) + (cz - ball.z) * (cz - ball.z);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    if (best >= 0) {
-      const cx = C.gridX0 + (best % C.gridN) * C.cell + C.cell / 2;
-      const cz = C.gridX0 + Math.floor(best / C.gridN) * C.cell + C.cell / 2;
-      const dx = cx - ball.x;
-      const dz = cz - ball.z;
-      const len = Math.sqrt(dx * dx + dz * dz) || 1;
-      ball.vx += (dx / len) * C.nudgeImpulse;
-      ball.vz += (dz / len) * C.nudgeImpulse;
-    }
-  }
-  // Pity (§3.2): a tier held too long auto-shatters, spectacularly.
   if (!s.pityDisabled && s.tick - s.tierEnterTick > C.pityTicks) {
-    s.tierEnterTick = s.tick; // once
+    s.tierEnterTick = s.tick;
     const groups = new Set<number>();
     for (const b of s.blocks) {
       if (!b.broken && b.threshold !== Infinity && Math.abs(b.cy - (tierBaseY(tier) - 50)) < 200) groups.add(b.groupId);
@@ -272,41 +213,17 @@ function antiStall(s: SimState, events: SimEvent[]): void {
   }
 }
 
-// The player's pick lands: card active until the next gate, ball released.
-export function applyCard(s: SimState, card: CardId): void {
-  if (s.gatePhase !== "wait") return;
-  s.activeCard = card;
-  s.pierceLeft = card === "pierce" ? CONFIG.cards.pierceCount : 0;
-  s.gatePhase = "none";
-  s.gatesPassed++;
-  s.ball.vx = 0;
-  s.ball.vz = 0;
-  s.ball.vy = CONFIG.gateDropSpeed;
-}
-
 export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   const events: SimEvent[] = [];
-  if (s.finished || s.gatePhase === "wait") return events; // frozen at a gate
+  if (s.finished) return events;
   s.tick++;
+  for (const k of Object.keys(s.boosterTimers) as BoosterId[]) {
+    const v = s.boosterTimers[k];
+    if (v !== undefined && v > 0) s.boosterTimers[k] = v - 1;
+  }
   const { ball } = s;
   const C = CONFIG;
-
-  if (s.gatePhase === "capture") {
-    // Scripted gate capture (§3.2): lerp to the anchor, then freeze.
-    s.gateT++;
-    const k = s.gateT / C.gateCaptureTicks;
-    ball.x = s.gateFrom.x + (C.shaftW / 2 - s.gateFrom.x) * k;
-    ball.y = s.gateFrom.y + (s.gateY - s.gateFrom.y) * k;
-    ball.z = s.gateFrom.z + (C.shaftD / 2 - s.gateFrom.z) * k;
-    ball.vx = ball.vy = ball.vz = 0;
-    if (s.gateT >= C.gateCaptureTicks) {
-      s.gatePhase = "wait";
-      events.push({ kind: "gate", gateIndex: s.gatesPassed });
-    }
-    return events;
-  }
-
-  const P = cardParams(s.activeCard);
+  const P = boosterParams(s.boosterTimers);
   ball.vx += C.g0 * C.kTilt * P.kTiltMul * tiltX * C.dt;
   ball.vy += C.g0 * C.dt;
   ball.vz += C.g0 * C.kTilt * P.kTiltMul * tiltZ * C.dt;
@@ -323,18 +240,6 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   ball.x += ball.vx * C.dt;
   ball.y += ball.vy * C.dt;
   ball.z += ball.vz * C.dt;
-
-  // Gate trigger: passing below a tier's gate plane captures the ball.
-  if (s.gatesPassed < C.tierCount - 1 && s.gatePhase === "none") {
-    const gateY = tierBaseY(s.gatesPassed) + C.gateDepthBelowTier;
-    if (ball.y > gateY) {
-      s.gatePhase = "capture";
-      s.gateT = 0;
-      s.gateFrom = { x: ball.x, y: ball.y, z: ball.z };
-      s.gateY = gateY;
-      return events;
-    }
-  }
 
   // Fixed contact order (§5.4): floor → walls W0..W3 → blocks by id.
   if (ball.y + C.ballRadius > C.floorY) {
@@ -361,25 +266,20 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   }
   resolveBlocks(s, events);
   processQueue(s, events);
-  antiStall(s, events);
+  pity(s, events);
 
   // The run ends the moment the ball reaches the floor (§3.2).
   if (ball.y + C.ballRadius >= C.floorY - 1) {
     s.finished = true;
     s.finishTick = s.tick;
-    if (s.parTicks > 0) {
-      s.parBonus = Math.max(0, Math.floor((s.parTicks - s.finishTick) / C.parScaleTicks));
-      s.score += s.parBonus;
-    }
     events.push({ kind: "finish" });
   }
   return events;
 }
 
 // Aim trajectory: the SAME integrator and wall maths as step(), ignoring
-// breakables except as landing surfaces. Hard wall contact CUTS the line
-// (owner: the bent bounce segment looked wrong); the LAST point is the
-// landing spot. Render-only consumer; never mutates state.
+// breakables except as landing surfaces. Hard wall contact CUTS the line;
+// the LAST point is the landing spot. Render-only consumer.
 export function predictPath(
   s: SimState,
   tiltX: number,
@@ -387,7 +287,7 @@ export function predictPath(
 ): { points: { x: number; y: number; z: number }[]; wallHit: boolean } {
   const C = CONFIG;
   const WALL_CUT_SPEED = 150;
-  const P = cardParams(s.activeCard);
+  const P = boosterParams(s.boosterTimers);
   const pts: { x: number; y: number; z: number }[] = [];
   let wallHit = false;
   let { x, y, z, vx, vy, vz } = s.ball;

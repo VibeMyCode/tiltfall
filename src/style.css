@@ -139,3 +139,80 @@ canvas#scene {
   padding: 1px 6px;
 }
 .card:active { transform: scale(0.96); }
+
+.booster-bar {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 8px) + 46px);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  z-index: 10;
+  font-family: system-ui, sans-serif;
+}
+.booster {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  border: 2px solid var(--accent, #7fd4ff);
+  background: rgba(12, 16, 32, 0.8);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.booster.active { box-shadow: 0 0 18px var(--accent); background: color-mix(in srgb, var(--accent) 25%, #0c1020); }
+.b-icon { font-size: 20px; line-height: 1; color: var(--accent); font-weight: 800; }
+.b-count { font-size: 11px; color: #cfe0ff; margin-top: 2px; }
+.b-key {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  font-size: 10px;
+  color: #8fa2c9;
+  background: #0c1020;
+  border: 1px solid #2c3766;
+  border-radius: 5px;
+  padding: 0 4px;
+}
+.booster:active { transform: scale(0.92); }
+
+.new-best {
+  margin-bottom: 10px;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #ffd23f;
+  animation: bestpulse 0.9s ease-in-out infinite alternate;
+}
+.new-best.hidden { display: none; }
+@keyframes bestpulse { to { transform: scale(1.12); text-shadow: 0 0 18px #ffd23f; } }
+.res-best { border-top: 1px solid #2c3766; margin-top: 6px; padding-top: 10px !important; color: #9fb4d8; }
+
+.shop { margin-top: 14px; text-align: left; }
+.shop-head { font-size: 13px; letter-spacing: 0.1em; color: #9fb4d8; display: flex; justify-content: space-between; }
+.bank { color: #ffe9a8; font-weight: 800; }
+.shop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.shop-item {
+  position: relative;
+  border: 1.5px solid var(--accent, #7fd4ff);
+  border-radius: 12px;
+  background: #10162c;
+  color: #dfe9ff;
+  padding: 8px 6px 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.shop-item:disabled { opacity: 0.38; cursor: default; }
+.shop-item b { font-size: 10.5px; letter-spacing: 0.04em; color: var(--accent); }
+.shop-item small { font-size: 9.5px; line-height: 1.25; color: #9fb0d4; text-align: center; }
+.shop-icon { font-size: 20px; font-weight: 800; color: var(--accent); }
+.shop-price { font-size: 11px; color: #ffe9a8; font-weight: 700; }
+.shop-owned { position: absolute; top: 4px; right: 6px; font-size: 10px; color: #8fa2c9; }
+.shop-item:not(:disabled):active { transform: scale(0.95); }

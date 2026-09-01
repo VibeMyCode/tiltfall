@@ -117,8 +117,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     glass: makeMaterial("mGlass", [0.3, 0.75, 0.95], 0.25, 0.62),
     stone: makeMaterial("mStone", [0.45, 0.47, 0.55], 0.1),
     bomb: makeMaterial("mBomb", [1.0, 0.62, 0.12], 0.7),
-    bumper: makeMaterial("mBumper", [0.25, 0.95, 0.55], 0.45),
-    spike: makeMaterial("mSpike", [0.75, 0.2, 0.25], 0.3),
+    bumper: makeMaterial("mBumper", [0.1, 1.0, 0.45], 0.85), // must scream "launcher"
+    spike: makeMaterial("mSpike", [0.85, 0.12, 0.18], 0.5),
   };
   const glassShardMat = makeMaterial("mGlassShard", [0.55, 0.85, 1.0], 0.5, 0.75);
   glassShardMat.backFaceCulling = false;
@@ -136,6 +136,24 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     mesh.material = MATS[b.type];
     mesh.parent = tower;
     blockMeshes.set(b.id, mesh);
+    if (b.type === "spike") {
+      // Spikes must LOOK like spikes (owner): a 2×2 bed of cones on the base.
+      for (const [ox, oz] of [
+        [-22, -22],
+        [-22, 22],
+        [22, -22],
+        [22, 22],
+      ]) {
+        const cone = MeshBuilder.CreateCylinder(
+          `sp${b.id}`,
+          { diameterTop: 0, diameterBottom: 34, height: 52, tessellation: 8 },
+          scene,
+        );
+        cone.material = MATS.spike;
+        cone.parent = mesh; // hides together with the base
+        cone.position = new Vector3(ox, b.hy + 26, oz);
+      }
+    }
   }
 
   const ballMat = makeMaterial("mBall", [0.35, 0.9, 1.0], 0.5); // dimmer: the

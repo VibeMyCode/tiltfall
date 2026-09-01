@@ -139,12 +139,15 @@ export function buildTower(seed: number): BlockDef[] {
       }
     }
 
-    // 3. Singles sprinkled on remaining free cells — sparse by design: the
-    // gaps are the aiming targets.
-    const stoneP = 0.15 + tier * 0.05;
+    // 3. Singles on remaining free cells — denser now (owner: the edges were
+    // too empty and blast-radius differences could not be read), with an
+    // extra bias on border cells.
+    const stoneP = 0.15 + tier * 0.04;
     for (let r = 0; r < C.gridN; r++) {
       for (let c = 0; c < C.gridN; c++) {
-        if (occupied[r * C.gridN + c] || rng() >= 0.22) continue;
+        const border = r === 0 || c === 0 || r === C.gridN - 1 || c === C.gridN - 1;
+        const p = border ? 0.42 : 0.3;
+        if (occupied[r * C.gridN + c] || rng() >= p) continue;
         const type: BlockType = rng() < stoneP ? "stone" : "glass";
         const h = HEIGHTS[Math.floor(rng() * HEIGHTS.length)];
         const g = nextGroup++;
@@ -153,14 +156,13 @@ export function buildTower(seed: number): BlockDef[] {
       }
     }
 
-    // 4. Unbreakables (§4.1): bumpers launch, spikes punish. None on tier 0.
+    // 4. Unbreakables (§4.1): bumpers launch, spikes stop dead. Spikes from
+    // tier 1; two bumpers per tier so they are actually encountered.
+    placeSingle("bumper", 50);
+    placeSingle("bumper", 50);
     if (tier > 0) {
-      placeSingle("bumper", 50);
-      if (rng() < 0.5) placeSingle("bumper", 50);
-      if (rng() < 0.6) placeSingle("spike", 40);
-      if (tier >= 3 && rng() < 0.5) placeSingle("spike", 40);
-    } else {
-      placeSingle("bumper", 50);
+      placeSingle("spike", 40);
+      if (tier >= 2 && rng() < 0.6) placeSingle("spike", 40);
     }
   }
   return out;
@@ -195,45 +197,34 @@ export function probeTilt(pattern: number, tick: number): { x: number; z: number
 }
 
 
-// Probe validation + par (§4.3): 16 scripted descents through the REAL sim
-// with pity disabled and first-offer card picks. A tower passes when >= 80%
-// of probes clear every tier within the per-tier tick limit and finish.
-import { applyCard, createSim, step } from "./sim";
-import { gateOffers } from "./cards";
+// Probe validation (§4.3, tests only — no par UI): 16 scripted descents
+// through the REAL sim with pity disabled. A tower passes when >= 80% of
+// probes finish within the total tick budget.
+import { createSim, step } from "./sim";
 
 export interface TowerValidation {
   ok: boolean;
   passed: number;
-  parTicks: number;
+  medianTicks: number;
 }
 
-export function validateTower(seed: number, layout: BlockDef[]): TowerValidation {
+export function validateTower(layout: BlockDef[]): TowerValidation {
   const C = CONFIG;
-  const limit = C.probeTierTickLimit;
-  const maxTicks = limit * C.tierCount;
+  const maxTicks = C.probeTierTickLimit * C.tierCount;
   const finishTicks: number[] = [];
   let passed = 0;
   for (let p = 0; p < 16; p++) {
     const sim = createSim(layout, { pityDisabled: true });
-    let lastGateTick = 0;
-    let tierOk = true;
     while (sim.tick < maxTicks && !sim.finished) {
       const t = probeTilt(p, sim.tick);
-      const events = step(sim, t.x, t.z);
-      for (const e of events) {
-        if (e.kind === "gate" && e.gateIndex !== undefined) {
-          if (sim.tick - lastGateTick > limit) tierOk = false;
-          lastGateTick = sim.tick;
-          applyCard(sim, gateOffers(seed, e.gateIndex)[0]);
-        }
-      }
+      step(sim, t.x, t.z);
     }
-    if (sim.finished && tierOk && sim.finishTick - lastGateTick <= limit) {
+    if (sim.finished) {
       passed++;
       finishTicks.push(sim.finishTick);
     }
   }
   finishTicks.sort((a, b) => a - b);
   const median = finishTicks.length ? finishTicks[Math.floor(finishTicks.length / 2)] : 0;
-  return { ok: passed >= 13, passed, parTicks: Math.floor(median * 0.9) };
+  return { ok: passed >= 13, passed, medianTicks: median };
 }

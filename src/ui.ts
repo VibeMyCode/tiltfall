@@ -1,17 +1,34 @@
-// DOM HUD + Results overlay (§2: UI is plain HTML/CSS, not Babylon GUI).
+// DOM HUD + booster bar + results/shop overlay (§2: plain HTML/CSS).
 import { CONFIG } from "./config";
-import { CARD_INFO, type CardId } from "./cards";
+import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boosters";
+
+export interface ShopModel {
+  bank: number;
+  inventory: Record<BoosterId, number>;
+  buy: (id: BoosterId) => void;
+}
 
 export interface UI {
   setHud: (timeS: number, score: number, combo: number) => void;
-  showResults: (r: { timeS: number; score: number; broken: number; maxCombo: number; parBonus: number }) => void;
+  setBoosterBar: (inventory: Record<BoosterId, number>, timers: Partial<Record<BoosterId, number>>) => void;
+  showResults: (r: {
+    timeS: number;
+    score: number;
+    broken: number;
+    maxCombo: number;
+    bestScore: number;
+    bestCombo: number;
+    newBest: boolean;
+    shop: ShopModel;
+  }) => void;
   hideResults: () => void;
-  showDraft: (offers: CardId[], onPick: (card: CardId) => void) => void;
-  isDraftOpen: () => boolean;
-  pickDraft: (index: number) => void;
 }
 
-export function createUI(onReplay: () => void, invert: { get: () => boolean; toggle: () => boolean }): UI {
+export function createUI(
+  onReplay: () => void,
+  invert: { get: () => boolean; toggle: () => boolean },
+  onActivate: (id: BoosterId) => void,
+): UI {
   const hud = document.createElement("div");
   hud.className = "hud";
   hud.innerHTML = `
@@ -24,51 +41,65 @@ export function createUI(onReplay: () => void, invert: { get: () => boolean; tog
   const renderInvert = (on: boolean) => (invertBtn.textContent = `Y ${on ? "⇅ INV" : "↓ STD"}`);
   renderInvert(invert.get());
   invertBtn.addEventListener("click", () => renderInvert(invert.toggle()));
-  if (CONFIG.targetControl) invertBtn.style.display = "none"; // pointing AT a target has no inversion
+  if (CONFIG.targetControl) invertBtn.style.display = "none";
+
+  // Booster bar: owned boosters as icons with counts; tap or keys 1..6.
+  const bar = document.createElement("div");
+  bar.className = "booster-bar";
+  document.body.appendChild(bar);
+  let barKey = "";
+
+  window.addEventListener("keydown", (e) => {
+    const i = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"].indexOf(e.code);
+    if (i >= 0) onActivate(BOOSTER_ORDER[i]);
+  });
 
   const results = document.createElement("div");
   results.className = "results hidden";
   results.innerHTML = `
     <div class="results-card">
+      <div class="new-best hidden" id="res-newbest">🏆 NEW BEST!</div>
       <h2>DESCENT COMPLETE</h2>
       <div class="results-row"><span>Score</span><b id="res-score">0</b></div>
       <div class="results-row"><span>Time</span><b id="res-time">0.0s</b></div>
       <div class="results-row"><span>Blocks smashed</span><b id="res-broken">0</b></div>
       <div class="results-row"><span>Best combo</span><b id="res-combo">×1</b></div>
-      <div class="results-row"><span>Par bonus</span><b id="res-par">+0</b></div>
+      <div class="results-row res-best"><span>Best score / combo</span><b id="res-best">0 / ×1</b></div>
+      <div class="shop">
+        <div class="shop-head">BOOSTER SHOP <span class="bank" id="shop-bank">0</span></div>
+        <div class="shop-grid" id="shop-grid"></div>
+      </div>
       <button id="res-replay">DROP AGAIN</button>
     </div>`;
   document.body.appendChild(results);
   results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", onReplay);
 
-  // Draft overlay (§3.4): 3 cards, countdown ring, auto-pick leftmost.
-  const draft = document.createElement("div");
-  draft.className = "draft hidden";
-  draft.innerHTML = `<div class="draft-timer"><div class="draft-ring" id="draft-ring"></div></div><div class="draft-cards" id="draft-cards"></div>`;
-  document.body.appendChild(draft);
-  let draftOffers: CardId[] = [];
-  let draftPickCb: ((c: CardId) => void) | null = null;
-  let draftTimer = 0;
-  let draftRaf = 0;
-
-  function closeDraft(card: CardId): void {
-    if (!draftPickCb) return;
-    const cb = draftPickCb;
-    draftPickCb = null;
-    clearTimeout(draftTimer);
-    cancelAnimationFrame(draftRaf);
-    draft.classList.add("hidden");
-    cb(card);
-  }
-
-  window.addEventListener("keydown", (e) => {
-    if (!draftPickCb) return;
-    const i = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
-    if (i >= 0 && draftOffers[i]) closeDraft(draftOffers[i]);
-  });
-
   const el = (id: string) => document.getElementById(id)!;
   let lastCombo = 1;
+  let shopModel: ShopModel | null = null;
+
+  function renderShop(): void {
+    if (!shopModel) return;
+    el("shop-bank").textContent = String(shopModel.bank);
+    const grid = el("shop-grid");
+    grid.innerHTML = "";
+    for (const id of BOOSTER_ORDER) {
+      const info = BOOSTER_INFO[id];
+      const price = boosterPrice(id);
+      const owned = shopModel.inventory[id] ?? 0;
+      const btn = document.createElement("button");
+      btn.className = "shop-item";
+      btn.style.setProperty("--accent", info.color);
+      btn.disabled = shopModel.bank < price;
+      btn.innerHTML = `<span class="shop-icon">${info.icon}</span><b>${info.name}</b><small>${info.desc}</small><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`;
+      btn.addEventListener("click", () => {
+        shopModel!.buy(id);
+        renderShop();
+      });
+      grid.appendChild(btn);
+    }
+  }
+
   return {
     setHud(timeS, score, combo) {
       el("hud-time").textContent = `${timeS.toFixed(1)}s`;
@@ -78,51 +109,43 @@ export function createUI(onReplay: () => void, invert: { get: () => boolean; tog
       comboEl.classList.toggle("hot", combo >= 4);
       if (combo > lastCombo) {
         comboEl.classList.remove("pop");
-        void comboEl.offsetWidth; // restart the CSS animation
+        void comboEl.offsetWidth;
         comboEl.classList.add("pop");
       }
       lastCombo = combo;
+    },
+    setBoosterBar(inventory, timers) {
+      const key = JSON.stringify([inventory, timers]);
+      if (key === barKey) return;
+      barKey = key;
+      bar.innerHTML = "";
+      BOOSTER_ORDER.forEach((id, i) => {
+        const owned = inventory[id] ?? 0;
+        const active = (timers[id] ?? 0) > 0;
+        if (owned <= 0 && !active) return;
+        const info = BOOSTER_INFO[id];
+        const btn = document.createElement("button");
+        btn.className = `booster${active ? " active" : ""}`;
+        btn.style.setProperty("--accent", info.color);
+        btn.innerHTML = `<span class="b-icon">${info.icon}</span><span class="b-count">${active ? Math.ceil((timers[id] ?? 0) / 120) + "s" : "×" + owned}</span><span class="b-key">${i + 1}</span>`;
+        btn.addEventListener("click", () => onActivate(id));
+        bar.appendChild(btn);
+      });
     },
     showResults(r) {
       el("res-score").textContent = String(r.score);
       el("res-time").textContent = `${r.timeS.toFixed(1)}s`;
       el("res-broken").textContent = String(r.broken);
       el("res-combo").textContent = `×${r.maxCombo}`;
-      el("res-par").textContent = `+${r.parBonus}`;
+      el("res-best").textContent = `${r.bestScore} / ×${r.bestCombo}`;
+      el("res-newbest").classList.toggle("hidden", !r.newBest);
+      shopModel = r.shop;
+      renderShop();
       results.classList.remove("hidden");
     },
     hideResults() {
       results.classList.add("hidden");
-    },
-    showDraft(offers, onPick) {
-      draftOffers = offers;
-      draftPickCb = onPick;
-      const box = el("draft-cards");
-      box.innerHTML = "";
-      offers.forEach((id, i) => {
-        const info = CARD_INFO[id];
-        const btn = document.createElement("button");
-        btn.className = "card";
-        btn.style.setProperty("--accent", info.color);
-        btn.innerHTML = `<span class="card-key">${i + 1}</span><b>${info.name}</b><small>${info.desc}</small>`;
-        btn.addEventListener("click", () => closeDraft(id));
-        box.appendChild(btn);
-      });
-      draft.classList.remove("hidden");
-      const t0 = performance.now();
-      const total = CONFIG.draftSeconds * 1000;
-      const ring = el("draft-ring");
-      const tickRing = () => {
-        const k = Math.min(1, (performance.now() - t0) / total);
-        ring.style.setProperty("--p", String(1 - k));
-        if (draftPickCb) draftRaf = requestAnimationFrame(tickRing);
-      };
-      tickRing();
-      draftTimer = window.setTimeout(() => closeDraft(offers[0]), total);
-    },
-    isDraftOpen: () => draftPickCb !== null,
-    pickDraft(index) {
-      if (draftPickCb && draftOffers[index]) closeDraft(draftOffers[index]);
+      shopModel = null;
     },
   };
 }

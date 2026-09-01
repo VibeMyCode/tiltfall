@@ -7,10 +7,10 @@ export const CONFIG = {
 
   // Tower shape. Air between tiers is a GAMEPLAY feature (owner feedback):
   // the long fall is where you see the next tier, aim, and prepare.
-  tierCount: 5,
+  tierCount: 8, // a run should be a real descent, not a 10-second drop (owner)
   firstTierTopY: 1200,
   tierSpacing: 2400,
-  floorY: 13400,
+  floorY: 20400,
   spawn: { x: 650, y: 140, z: 650 },
   cell: 100,
   gridN: 8,
@@ -44,44 +44,33 @@ export const CONFIG = {
   cascadeStepTicks: 10,
   blastRadius: 240,
 
-  // Draft gates (§3.4): after tiers 1..4 the ball is captured, the sim
-  // freezes and the player picks 1 of 3 cards. Wall-clock never counts.
-  gateCaptureTicks: 30,
-  gateDepthBelowTier: 500, // gate plane sits this far under a tier's base
-  gateDropSpeed: 900,
-  draftSeconds: 3,
-
-  // Card effects (all consumed via cardParams — never scattered ifs).
-  cards: {
-    heavyMassMul: 1.45,
-    heavyTiltMul: 0.8,
-    featherTiltMul: 1.4,
-    featherMassMul: 0.75,
-    chainBlastMul: 1.6,
-    pogoBounce: 0.55,
-    bouncyRestAdd: 0.25,
-    pierceCount: 6,
-    surgeWindowMul: 2,
-    shockBaseCells: 1,
-    shockChainPer: 15, // +1 cell of shockwave radius per this many combo-chain breaks
-    shockDelayTicks: 6,
+  // BOOSTERS (owner redesign, replaces mid-run draft gates): bought in the
+  // shop AFTER a run with banked score, activated mid-run on demand (tap or
+  // number key), each lasting boosterTicks of sim time.
+  boosterTicks: 720, // 6 s
+  boosters: {
+    quake: { price: 1500, blastCells: 3.2 }, // every break blasts a big radius
+    chain: { price: 1200, blastMul: 1.9 }, // bomb chains reach far + slow-mo showcase
+    x2: { price: 800, scoreMul: 2 },
+    heavy: { price: 600, massMul: 1.6, tiltMul: 0.85 },
+    bounce: { price: 500, breakBounce: 0.62 }, // big hop after each smash
+    feather: { price: 400, tiltMul: 1.8 },
   },
+  slowMoScale: 0.35, // playback speed while a chain-bomb cascade showcases
 
-  // Unbreakables (§4.1).
-  bumperRestitution: 1.35,
+  // Unbreakables (§4.1). Bumpers must FEEL like launchers; spikes stop the
+  // ball dead (owner).
+  bumperRestitution: 1.9,
+  bumperMinLaunch: 1250,
   bumperPoints: 5,
-  spikeSlow: 0.85,
+  spikeStop: 0.05,
 
-  // Anti-stall (§3.2): deterministic nudge toward the nearest open cell, and
-  // the tier pity-shatter.
-  stallTicks: 180, // 1.5 s below restSpeed while not on the floor
-  nudgeImpulse: 460,
-  pityTicks: 5400, // 45 s on one tier → the rest of it auto-shatters
+  // Pity (§3.2, owner-tuned): no nudging — if a tier holds the ball this
+  // long, it auto-shatters spectacularly. The nudge is gone.
+  pityTicks: 2160, // 18 s
 
-  // Levelgen probe validation (§4.3): probes with pity disabled; each tier
-  // must clear in under this many ticks for >= 80% of probes.
-  probeTierTickLimit: 4800, // 40 s
-  parScaleTicks: 12, // finish bonus = (parTicks - finishTicks) / this
+  // Probe validation (tests only — no par UI, owner).
+  probeTierTickLimit: 4800,
 
   // Combo & scoring (§3.5). Window/timer are in ticks.
   comboWindowTicks: 300, // 2.5 s
