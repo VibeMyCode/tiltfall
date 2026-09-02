@@ -24,7 +24,10 @@ function loadInvertY(): boolean {
   }
 }
 
-export function attachInput(canvas: HTMLCanvasElement): InputState {
+export const isTouch = (): boolean =>
+  typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
+
+export function attachInput(canvas: HTMLCanvasElement, onDoubleTap?: () => void): InputState {
   let dragging = false;
   let originX = 0;
   let originY = 0;
@@ -41,7 +44,21 @@ export function attachInput(canvas: HTMLCanvasElement): InputState {
   const pzSign = () => CONFIG.inputSignZ * (invY ? -1 : 1);
 
   canvas.style.touchAction = "none";
+  let lastTapMs = -1e9;
+  let lastTapX = 0;
+  let lastTapY = 0;
   canvas.addEventListener("pointerdown", (e) => {
+    // Double tap = JUMP on touch (owner: the separate button was awkward).
+    const now = performance.now();
+    const near = Math.abs(e.clientX - lastTapX) + Math.abs(e.clientY - lastTapY) < CONFIG.doubleTapSlopPx;
+    if (onDoubleTap && now - lastTapMs < CONFIG.doubleTapMs && near) {
+      onDoubleTap();
+      lastTapMs = -1e9; // a third tap should not fire again
+    } else {
+      lastTapMs = now;
+      lastTapX = e.clientX;
+      lastTapY = e.clientY;
+    }
     dragging = true;
     originX = e.clientX;
     originY = e.clientY;

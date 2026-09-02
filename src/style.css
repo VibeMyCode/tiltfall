@@ -465,3 +465,50 @@ body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { displa
 .title-hint { margin-top: 20px; font-size: 11.5px; color: #6f7ea3; letter-spacing: 0.04em; }
 .title-hint b { color: #9fb4d8; }
 body.titlescreen .hud, body.titlescreen .jump-btn, body.titlescreen .booster-bar { display: none; }
+
+/* ---- HUD polish + mobile layout (owner: misaligned, overlapping) ---- */
+.hud { gap: 8px; flex-wrap: wrap; padding: 0 8px; }
+.hud-item { display: flex; align-items: center; justify-content: center; line-height: 1; }
+.hud-jump { color: #b9ecff; min-width: 54px; }
+.hud-jump.ready { color: #7fd4ff; }
+.booster-bar { top: calc(env(safe-area-inset-top, 8px) + 54px); }
+
+@media (pointer: coarse) {
+  /* Touch: no jump button — double tap anywhere jumps (owner). */
+  .jump-btn { display: none; }
+}
+
+@media (max-width: 560px) {
+  .hud { gap: 6px; top: calc(env(safe-area-inset-top, 6px) + 2px); }
+  .hud-item { font-size: 15px; padding: 5px 9px; border-radius: 10px; }
+  #hud-time { display: none; } /* the clock is the least useful chip on a phone */
+  #hud-score { min-width: 64px; }
+  #hud-combo { min-width: 40px; }
+  .hud-depth { min-width: 48px; }
+  .hud-jump { min-width: 48px; font-size: 14px; }
+  .hud-toggle { font-size: 12px; padding: 5px 8px; }
+  .booster-bar { top: calc(env(safe-area-inset-top, 6px) + 46px); gap: 8px; }
+  .booster { width: 46px; height: 46px; border-radius: 12px; }
+  .b-icon svg { width: 20px; height: 20px; }
+  .b-count { font-size: 10px; }
+  /* Results card: tighter, no wasted padding */
+  .results-card { width: min(440px, 96vw); }
+  .results-scroll { padding: 16px 14px 8px; }
+  .hero-score { font-size: 38px; }
+  .chip-row { gap: 6px; }
+  .chip { padding: 5px 9px; font-size: 11px; }
+  .shop-grid { gap: 6px; }
+  .shop-item { padding: 8px 4px 6px; }
+  .shop-item b { font-size: 9.5px; }
+  .lvl-stats { gap: 4px; }
+  .lvl-stats i { font-size: 9px; }
+  .lvl-stats b { font-size: 12px; margin-right: 4px; }
+  .task { font-size: 12px; }
+}
+
+@media (max-width: 560px) {
+  /* The HUD is ONE row, always — a wrapped chip used to hide behind the
+     booster bar (owner). */
+  .hud { flex-wrap: nowrap; }
+  #hud-mute { min-width: 0; padding: 5px 8px; }
+}

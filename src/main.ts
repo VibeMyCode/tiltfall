@@ -19,7 +19,7 @@ import {
 } from "./meta";
 import { activateBooster, createSim, jump, predictPath, step, type SimEvent, type SimState } from "./sim";
 import { SFX, initAudio, isMuted, toggleMute } from "./sfx";
-import { attachInput } from "./input";
+import { attachInput, isTouch } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
 
@@ -76,7 +76,7 @@ const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 // Every run is a NEW random tower (owner: generative all the way). The seed
 // itself is drawn outside the sim — the sim stays deterministic per seed.
 let sim: SimState = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
-const input = attachInput(canvas);
+const input = attachInput(canvas, () => tryJump());
 const renderer = createRenderer(canvas, sim.blocks);
 renderer.setSkin(skin);
 
@@ -277,7 +277,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     const m0 = renderer.screenToShaft(pt.ox, pt.oy, sim.ball.y);
     const m1 = renderer.screenToShaft(pt.cx, pt.cy, sim.ball.y);
     if (m0 && m1) {
-      const amp = CONFIG.pointerDragAmplify;
+      const amp = isTouch() ? CONFIG.pointerDragAmplifyTouch : CONFIG.pointerDragAmplify;
       driveTarget = {
         x: clampShaft(dragAnchor.x + (m1.x - m0.x) * amp, CONFIG.shaftW),
         z: clampShaft(dragAnchor.z + (m1.z - m0.z) * amp, CONFIG.shaftD),
@@ -333,6 +333,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     sim.jumpCharges > 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks,
     sim.jumpCharges,
     sim.jumpMaxCharges,
+    sim.jumpCd * CONFIG.dt,
   );
   ui.setBoosterBar(inventory, sim.armed, sim.runOn);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;

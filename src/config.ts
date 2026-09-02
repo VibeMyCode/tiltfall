@@ -158,6 +158,9 @@ export const CONFIG = {
   // action on phones): the drag MOVES the target from where the ball was at
   // touch-start, amplified — the finger can rest anywhere on screen.
   pointerDragAmplify: 1.6,
+  pointerDragAmplifyTouch: 1.05, // calmer on phones (owner)
+  doubleTapMs: 300, // touch: double tap = JUMP (the button is desktop-only)
+  doubleTapSlopPx: 60,
 
   // Camera.
   camHeight: 1500,
@@ -165,7 +168,7 @@ export const CONFIG = {
   camFov: 0.9,
   camSmooth: 0.09,
   camTiltZoom: 0, // input-linked zoom retired with the static world (owner: jerky)
-  portraitTargetAspect: 0.85, // portrait zoom-out target — smaller = bigger tower
+  portraitTargetAspect: 0.62, // portrait zoom-out target — smaller = bigger tower
   // (the tower no longer tilts, so it can fill more of a phone screen)
 
   // Juice (render-only). No positional camera shake — it reads as an input

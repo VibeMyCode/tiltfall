@@ -45,7 +45,7 @@ export interface ResultsModel {
 
 export interface UI {
   setHud: (timeS: number, score: number, combo: number, depth: number, shields: number) => void;
-  setJump: (readyFrac: number, charges: number, maxCharges: number) => void;
+  setJump: (readyFrac: number, charges: number, maxCharges: number, cooldownS: number) => void;
   setBoosterBar: (
     inventory: Record<BoosterId, number>,
     armed: Partial<Record<BoosterId, boolean>>,
@@ -73,6 +73,7 @@ export function createUI(h: UIHandlers): UI {
     <div class="hud-item hud-score" id="hud-score">0</div>
     <div class="hud-item hud-combo" id="hud-combo">×1</div>
     <div class="hud-item hud-depth" id="hud-depth">◈ 0</div>
+    <div class="hud-item hud-jump" id="hud-jump">⤒</div>
     <div class="hud-item hud-shield hidden" id="hud-shield">⛨ 0</div>
     <button class="hud-item hud-toggle" id="hud-invert"></button>
     <button class="hud-item hud-toggle" id="hud-mute"></button>`;
@@ -83,7 +84,11 @@ export function createUI(h: UIHandlers): UI {
   invertBtn.addEventListener("click", () => renderInvert(h.invert.toggle()));
   if (CONFIG.targetControl) invertBtn.style.display = "none";
   const muteBtn = hud.querySelector<HTMLButtonElement>("#hud-mute")!;
-  const renderMute = (m: boolean) => (muteBtn.textContent = m ? "♪ OFF" : "♪ ON");
+  const narrow = () => window.innerWidth < 560;
+  // Icon-only on phones: a wide label pushed the HUD onto a second row and
+  // the wrapped chip hid behind the booster bar (owner screenshot).
+  const renderMute = (m: boolean) =>
+    (muteBtn.textContent = narrow() ? (m ? "♪̸" : "♪") : m ? "♪ OFF" : "♪ ON");
   renderMute(h.mute.get());
   muteBtn.addEventListener("click", () => renderMute(h.mute.toggle()));
 
@@ -96,10 +101,14 @@ export function createUI(h: UIHandlers): UI {
       <p class="tagline">Steer the falling ball. Smash everything. Dodge the mines.</p>
       <div class="title-best hidden" id="title-best"></div>
       <button id="title-play">PLAY</button>
-      <div class="title-hint">drag anywhere to steer · <b>SPACE</b> or the button to jump · numbers activate boosters</div>
+      <div class="title-hint" id="title-hint"></div>
     </div>`;
   document.body.appendChild(title);
   document.body.classList.add("titlescreen");
+  const coarse = window.matchMedia?.("(pointer: coarse)").matches === true;
+  title.querySelector<HTMLElement>("#title-hint")!.innerHTML = coarse
+    ? "drag anywhere to steer · <b>double tap</b> to jump · tap a booster to use it"
+    : "drag or <b>WASD</b> to steer · <b>SPACE</b> to jump · <b>1-6</b> activate boosters";
   const b = h.best();
   if (b.score > 0) {
     const tb = title.querySelector<HTMLElement>("#title-best")!;
@@ -276,12 +285,17 @@ export function createUI(h: UIHandlers): UI {
       }
       lastCombo = combo;
     },
-    setJump(readyFrac, charges, maxCharges) {
+    setJump(readyFrac, charges, maxCharges, cooldownS) {
       el("jump-fill").style.setProperty("--f", String(readyFrac));
       jumpBtn.classList.toggle("ready", charges > 0);
       const badge = el("jump-charges");
       badge.textContent = String(charges);
       badge.classList.toggle("hidden", maxCharges <= 1);
+      // HUD chip: the jump state lives up top too (touch has no button).
+      const chip = el("hud-jump");
+      const ready = charges > 0;
+      chip.textContent = ready ? (maxCharges > 1 ? `⤒ ${charges}` : "⤒") : `⤒ ${cooldownS.toFixed(1)}s`;
+      chip.classList.toggle("ready", ready);
     },
     setBoosterBar(inventory, armed, runOn) {
       const key = JSON.stringify([inventory, armed, runOn]);
