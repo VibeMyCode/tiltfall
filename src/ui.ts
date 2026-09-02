@@ -21,6 +21,7 @@ export interface ResultsModel {
   bestScore: number;
   bestDepth: number;
   newBest: boolean;
+  share: (() => void) | null; // Telegram only
   shop: ShopModel;
   // Live getters — the panel re-renders after purchases and must never show
   // a stale snapshot (owner bug: LEVEL stayed at 1 after buying).
@@ -168,10 +169,15 @@ export function createUI(h: UIHandlers): UI {
         </div>
         <div class="section daily" id="daily-box"></div>
       </div>
-      <button id="res-replay">DROP AGAIN</button>
+      <div class="results-actions">
+        <button id="res-share" class="hidden">SHARE</button>
+        <button id="res-replay">DROP AGAIN</button>
+      </div>
     </div>`;
   document.body.appendChild(results);
   results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", h.onReplay);
+  const shareBtn = results.querySelector<HTMLButtonElement>("#res-share")!;
+  shareBtn.addEventListener("click", () => model?.share?.());
 
   const el = (id: string) => document.getElementById(id)!;
   let lastCombo = 1;
@@ -323,6 +329,7 @@ export function createUI(h: UIHandlers): UI {
       el("res-combo").textContent = String(r.maxCombo);
       el("res-best").textContent = `${r.bestScore} · depth ${r.bestDepth}`;
       el("res-newbest").classList.toggle("hidden", !r.newBest);
+      shareBtn.classList.toggle("hidden", !r.share);
       renderPanels();
       document.body.classList.add("gameover"); // hides jump/booster bar
       results.classList.remove("hidden");

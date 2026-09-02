@@ -22,6 +22,7 @@ import { SFX, initAudio, isMuted, toggleMute } from "./sfx";
 import { attachInput, isTouch } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
+import { cloudLoad, cloudSave, haptic, initTelegram, inTelegram, shareScore } from "./telegram";
 
 const DT_MS = 1000 * CONFIG.dt;
 const MAX_FRAME_MS = 100;
@@ -36,11 +37,13 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 function save(key: string, value: unknown): void {
+  const json = JSON.stringify(value);
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, json);
   } catch {
     // storage unavailable — session-only progress
   }
+  cloudSave(key, json); // Telegram: same progress on every device
 }
 let bank = load<number>("tf.bank", 0);
 const rawInv = load<Record<string, number>>("tf.inv", {});
@@ -72,6 +75,8 @@ const simOpts = () => {
   };
 };
 
+initTelegram(); // expands/locks the Telegram viewport; no-op in a browser
+
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 // Every run is a NEW random tower (owner: generative all the way). The seed
 // itself is drawn outside the sim — the sim stays deterministic per seed.
@@ -79,6 +84,35 @@ let sim: SimState = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
 const input = attachInput(canvas, () => tryJump());
 const renderer = createRenderer(canvas, sim.blocks);
 renderer.setSkin(skin);
+
+// Telegram CloudStorage restore: if this device has no local progress but the
+// account does, adopt it (fire and forget — boot never waits on the network).
+if (inTelegram() && bank === 0 && level === 1) {
+  void (async () => {
+    const [cBank, cLevel, cInv, cBest, cSkin] = await Promise.all([
+      cloudLoad("tf.bank"),
+      cloudLoad("tf.level"),
+      cloudLoad("tf.inv"),
+      cloudLoad("tf.best"),
+      cloudLoad("tf.skin"),
+    ]);
+    if (cBank === null && cLevel === null) return;
+    try {
+      if (cBank) bank = JSON.parse(cBank) as number;
+      if (cLevel) level = JSON.parse(cLevel) as number;
+      if (cBest) best = JSON.parse(cBest) as { score: number; depth: number };
+      if (cSkin) {
+        skin = JSON.parse(cSkin) as string;
+        renderer.setSkin(skin);
+      }
+      if (cInv) Object.assign(inventory, JSON.parse(cInv) as Record<BoosterId, number>);
+      save("tf.bank", bank);
+      save("tf.level", level);
+    } catch {
+      // corrupt cloud payload — keep the local state
+    }
+  })();
+}
 
 const newRun = () => {
   clearTimeout(resultsTimer);
@@ -117,16 +151,28 @@ function playSfx(events: SimEvent[]): void {
     sfxBudget = 3;
   }
   for (const e of events) {
-    if (e.kind === "mine") SFX.mine();
-    else if (e.kind === "mineblast") SFX.mineBlast();
+    if (e.kind === "mine") {
+      SFX.mine();
+      haptic.death();
+    }
+    else if (e.kind === "mineblast") {
+      SFX.mineBlast();
+      haptic.boom();
+    }
     else if (e.kind === "shield") SFX.shield();
     else if (e.kind === "bumper") SFX.bumper();
     else if (e.kind === "spike") SFX.spike();
     else if (e.kind === "break" && sfxBudget > 0) {
       sfxBudget--;
-      if (e.btype === "bomb") SFX.bomb();
+      if (e.btype === "bomb") {
+        SFX.bomb();
+        haptic.boom();
+      }
       else if (e.btype === "stone") SFX.stone();
-      else SFX.glass(sim.combo);
+      else {
+        SFX.glass(sim.combo);
+        if (sim.combo >= 5) haptic.hit();
+      }
     }
   }
 }
@@ -174,6 +220,7 @@ function showResultsNow(): void {
     bestScore: best.score,
     bestDepth: best.depth,
     newBest: lastNewBest,
+    share: inTelegram() ? () => shareScore(sim.score, sim.depth, CONFIG.botUrl) : null,
     shop: {
       get bank() {
         return bank;
@@ -206,6 +253,7 @@ function showResultsNow(): void {
         bank -= cost;
         level++;
         SFX.levelUp();
+        haptic.win();
         save("tf.bank", bank);
         save("tf.level", level);
         return true;

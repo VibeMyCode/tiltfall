@@ -512,3 +512,24 @@ body.titlescreen .hud, body.titlescreen .jump-btn, body.titlescreen .booster-bar
   .hud { flex-wrap: nowrap; }
   #hud-mute { min-width: 0; padding: 5px 8px; }
 }
+
+/* Results footer: DROP AGAIN always, SHARE only inside Telegram */
+.results-actions { display: flex; flex-shrink: 0; }
+.results-actions button { flex: 1; }
+#res-share {
+  border: none;
+  border-radius: 0 0 0 16px;
+  padding: 15px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #cfe6ff;
+  background: #1b2440;
+  cursor: pointer;
+  max-width: 40%;
+}
+#res-share.hidden { display: none; }
+#res-share + #res-replay { border-radius: 0 0 16px 16px; }
+/* Telegram gives the app the full screen: keep our chrome clear of theirs */
+body.in-telegram .hud { top: calc(env(safe-area-inset-top, 8px) + 34px); }
+body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px); }

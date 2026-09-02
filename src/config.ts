@@ -96,6 +96,9 @@ export const CONFIG = {
     { level: 15, skin: "magma" },
   ] as { level: number; skin?: string; booster?: string; shield?: number; jumpCharge?: number }[],
 
+  // Telegram: the bot link used by the share button (set after @BotFather).
+  botUrl: "https://t.me/tiltfall_bot",
+
   // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
   // Goals are multi-run by design (owner: 1-3 runs cleared everything).
   dailyRewardEach: 90,
