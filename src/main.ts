@@ -156,7 +156,7 @@ function showResultsNow(): void {
     level: {
       current: () => level,
       cost: () => levelCost(level),
-      jumpPower: () => jumpPowerAt(level),
+      jumpMul: () => jumpPowerAt(level) / CONFIG.jumpBasePower,
       jumpCdS: () => jumpCooldownAt(level) * CONFIG.dt,
       shields: () => perksAt(level).shields,
       jumpCharges: () => perksAt(level).jumpCharges,
@@ -182,11 +182,12 @@ function showResultsNow(): void {
       },
     },
     daily: {
-      tasks: dailyTasks.map((t) => ({
-        ...t,
-        progress: daily.progress[t.id] ?? 0,
-        claimed: daily.claimed[t.id] ?? false,
-      })),
+      tasks: () =>
+        dailyTasks.map((t) => ({
+          ...t,
+          progress: daily.progress[t.id] ?? 0,
+          claimed: daily.claimed[t.id] ?? false,
+        })),
       claim: (id) => {
         const task = dailyTasks.find((t) => t.id === id);
         if (!task || daily.claimed[id]) return;

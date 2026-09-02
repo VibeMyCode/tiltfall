@@ -11,7 +11,7 @@ export interface SimBlock extends BlockDef {
 }
 
 export interface SimEvent {
-  kind: "break" | "finish" | "bumper" | "spike" | "pity" | "mine" | "shield" | "jump";
+  kind: "break" | "finish" | "bumper" | "spike" | "pity" | "mine" | "mineblast" | "shield" | "jump";
   id?: number;
   btype?: string; // block type on break events (daily-task tracking)
   cascade?: boolean;
@@ -127,7 +127,9 @@ const tierBaseY = (tier: number): number => CONFIG.firstTierTopY + tier * CONFIG
 function queueBlast(s: SimState, cx: number, cy: number, cz: number, radius: number, delayStep: number): void {
   const dist = new Map<number, number>();
   for (const b of s.blocks) {
-    if (b.broken || b.threshold === Infinity) continue;
+    // Mines are caught by blasts too (owner) — everything else unbreakable
+    // (bumpers, spikes) shrugs them off.
+    if (b.broken || (b.threshold === Infinity && b.type !== "mine")) continue;
     if (Math.abs(b.cy - cy) > 400) continue;
     const dx = b.cx - cx;
     const dz = b.cz - cz;
@@ -148,6 +150,14 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
     if (b.groupId !== groupId || b.broken) continue;
     b.broken = true;
     any = true;
+    if (b.type === "mine") {
+      // A mine caught in a blast detonates harmlessly: it takes out itself
+      // and roughly one block around it (owner design).
+      events.push({ kind: "mineblast", id: b.id });
+      s.score += CONFIG.points.mine ?? 0;
+      queueBlast(s, b.cx, b.cy, b.cz, CONFIG.cell * 1.15, CONFIG.cascadeStepTicks);
+      continue;
+    }
     events.push({ kind: "break", id: b.id, btype: b.type, cascade, bvx: s.ball.vx, bvy: s.ball.vy, bvz: s.ball.vz });
     if (b.primary) {
       if (s.tick - s.lastBreakTick <= CONFIG.comboWindowTicks) {

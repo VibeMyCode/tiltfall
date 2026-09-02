@@ -43,7 +43,7 @@ export const CONFIG = {
   // Score is DENOMINATED ×1/10 (owner): small readable numbers, and every
   // purchase costs several runs instead of one.
   thresholds: { glass: 8, stone: 22, bomb: 8 } as Record<string, number>,
-  points: { glass: 1, stone: 3, bomb: 3 } as Record<string, number>,
+  points: { glass: 1, stone: 3, bomb: 3, mine: 5 } as Record<string, number>,
 
   // Cascade (§4.2): a BOMB (yellow) breaks every piece whose center is within
   // blastRadius, rippling outward with the step delay. The blast is resolved

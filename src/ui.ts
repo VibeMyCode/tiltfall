@@ -3,6 +3,7 @@
 import { CONFIG } from "./config";
 import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boosters";
 import type { DailyTask } from "./meta";
+import { SKINS, drawSkin } from "./skins";
 
 export interface ShopModel {
   bank: number;
@@ -26,7 +27,7 @@ export interface ResultsModel {
   level: {
     current: () => number;
     cost: () => number;
-    jumpPower: () => number;
+    jumpMul: () => number; // jump strength relative to level 1 (owner)
     jumpCdS: () => number;
     shields: () => number;
     jumpCharges: () => number;
@@ -35,7 +36,9 @@ export interface ResultsModel {
   };
   skins: { unlocked: () => string[]; current: () => string; select: (id: string) => void };
   daily: {
-    tasks: (DailyTask & { progress: number; claimed: boolean })[];
+    // A getter, not a snapshot — claiming must refresh the rows (owner bug:
+    // the +90 button stayed after claiming).
+    tasks: () => (DailyTask & { progress: number; claimed: boolean })[];
     claim: (id: string) => void;
   };
 }
@@ -146,7 +149,7 @@ export function createUI(h: UIHandlers): UI {
     lb.innerHTML = `
       <div class="lvl-head">
         <span class="lvl-name">LEVEL <b>${lvl}</b></span>
-        <span class="lvl-stats"><i>jump</i><b>${m.level.jumpPower()}</b><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${charges > 1 ? `<i>charges</i><b>${charges}</b>` : ""}${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
+        <span class="lvl-stats"><i>jump</i><b>×${m.level.jumpMul().toFixed(2)}</b><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${charges > 1 ? `<i>charges</i><b>${charges}</b>` : ""}${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
       </div>
       <div class="lvl-next"><span>NEXT</span> ${m.level.nextText()}</div>
       <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;
@@ -155,12 +158,20 @@ export function createUI(h: UIHandlers): UI {
     });
 
     // Skins.
+    // Skin swatches paint the REAL procedural pattern (owner: the menu was
+    // showing flat colors while the ball had a pattern).
     const sr = el("skin-row");
     sr.innerHTML = "";
     for (const id of m.skins.unlocked()) {
       const b = document.createElement("button");
-      b.className = `skin skin-${id}${id === m.skins.current() ? " sel" : ""}`;
-      b.title = id;
+      b.className = `skin${id === m.skins.current() ? " sel" : ""}`;
+      b.title = SKINS[id]?.name ?? id;
+      const cv = document.createElement("canvas");
+      cv.width = 64;
+      cv.height = 64;
+      const ctx = cv.getContext("2d");
+      if (ctx) drawSkin(ctx, id, 64);
+      b.appendChild(cv);
       b.addEventListener("click", () => {
         m.skins.select(id);
         renderPanels();
@@ -193,7 +204,8 @@ export function createUI(h: UIHandlers): UI {
 
     // Daily tasks.
     const db = el("daily-box");
-    const rows = m.daily.tasks
+    const rows = m.daily
+      .tasks()
       .map((t) => {
         const done = t.progress >= t.goal;
         const btn = t.claimed

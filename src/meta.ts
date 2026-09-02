@@ -43,7 +43,10 @@ export function nextPerkText(level: number): string {
   if (row?.booster) bits.push(`unlock booster: ${row.booster.toUpperCase()}`);
   if (row?.shield) bits.push(`+${row.shield} free shield per run`);
   if (row?.jumpCharge) bits.push(`+${row.jumpCharge} jump charge`);
-  bits.push(`jump ${jumpPowerAt(level + 1)}`, `reload ${(jumpCooldownAt(level + 1) * CONFIG.dt).toFixed(1)}s`);
+  bits.push(
+    `jump ×${(jumpPowerAt(level + 1) / CONFIG.jumpBasePower).toFixed(2)}`,
+    `reload ${(jumpCooldownAt(level + 1) * CONFIG.dt).toFixed(1)}s`,
+  );
   return bits.join(" · ");
 }
 
@@ -61,7 +64,7 @@ const TASK_POOL: DailyTask[] = [
   { id: "bombs3", text: "Detonate 15 bombs", goal: 15 },
   { id: "combo8", text: "Reach a ×10 combo 5 times", goal: 5 },
   { id: "depth8", text: "Reach depth 14", goal: 1 },
-  { id: "bumper6", text: "Hit 30 bumpers", goal: 30 },
+  { id: "bumper6", text: "Bounce off 30 green launchers", goal: 30 },
   { id: "booster1", text: "Activate 6 boosters", goal: 6 },
   { id: "score5k", text: "Score 900 in one run", goal: 1 },
   { id: "runs6", text: "Finish 6 runs", goal: 6 },

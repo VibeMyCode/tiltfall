@@ -19,6 +19,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CONFIG } from "./config";
 import type { BlockDef, BlockType } from "./levelgen";
 import type { SimEvent } from "./sim";
+import { SKINS, drawSkin } from "./skins";
 
 interface Shard {
   mesh: Mesh;
@@ -131,6 +132,13 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   };
   const glassShardMat = makeMaterial("mGlassShard", [0.55, 0.85, 1.0], 0.5, 0.75);
   glassShardMat.backFaceCulling = false;
+  // Ball-death debris: plain bright colors, never the skin texture (owner).
+  const deathMats = [
+    makeMaterial("mDeath0", [1, 0.85, 0.4], 0.9),
+    makeMaterial("mDeath1", [1, 0.45, 0.25], 0.9),
+    makeMaterial("mDeath2", [0.6, 0.9, 1], 0.9),
+    makeMaterial("mDeath3", [1, 1, 1], 0.8),
+  ];
 
   const blockInfo = new Map<number, BlockDef>();
   const blockMeshes = new Map<number, Mesh>();
@@ -174,107 +182,6 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   }
   for (const b of layout) addBlockMesh(b);
 
-  // Ball skins (level unlocks): procedural — flat colors AND canvas-drawn
-  // patterns (stripes/stars/waves) via DynamicTexture. Emissive kept modest
-  // so colors read true (owner: ember was washing out to white).
-  const SKINS: Record<
-    string,
-    { rgb: [number, number, number]; emissive: number; pattern?: (ctx: CanvasRenderingContext2D) => void }
-  > = {
-    core: { rgb: [0.35, 0.9, 1.0], emissive: 0.35 },
-    ember: {
-      rgb: [1, 1, 1],
-      emissive: 0.55,
-      pattern: (ctx) => {
-        // Molten shell: dark crust with glowing lava veins.
-        ctx.fillStyle = "#3a1206";
-        ctx.fillRect(0, 0, 256, 256);
-        for (let i = 0; i < 26; i++) {
-          ctx.strokeStyle = ["#ff7a18", "#ffd23f", "#ff3d00"][i % 3];
-          ctx.lineWidth = 2 + Math.random() * 5;
-          ctx.beginPath();
-          let x = Math.random() * 256;
-          let y = Math.random() * 256;
-          ctx.moveTo(x, y);
-          for (let s = 0; s < 5; s++) {
-            x += (Math.random() - 0.5) * 90;
-            y += (Math.random() - 0.5) * 90;
-            ctx.lineTo(x, y);
-          }
-          ctx.stroke();
-        }
-      },
-    },
-    prism: {
-      rgb: [1, 1, 1],
-      emissive: 0.55,
-      pattern: (ctx) => {
-        const colors = ["#ff5f8f", "#ffb347", "#ffe08a", "#7dffb3", "#59c4ff", "#b48cff"];
-        for (let i = 0; i < 24; i++) {
-          ctx.fillStyle = colors[i % colors.length];
-          ctx.save();
-          ctx.translate(128, 128);
-          ctx.rotate((i * Math.PI) / 12);
-          ctx.fillRect(-180, -8, 360, 16); // rotating rainbow bands
-          ctx.restore();
-        }
-      },
-    },
-    checker: {
-      rgb: [1, 1, 1],
-      emissive: 0.5,
-      pattern: (ctx) => {
-        for (let y = 0; y < 8; y++)
-          for (let x = 0; x < 8; x++) {
-            ctx.fillStyle = (x + y) % 2 ? "#0d1b2e" : "#59ffd0";
-            ctx.fillRect(x * 32, y * 32, 32, 32);
-          }
-      },
-    },
-    magma: {
-      rgb: [1, 1, 1],
-      emissive: 0.62,
-      pattern: (ctx) => {
-        ctx.fillStyle = "#140404";
-        ctx.fillRect(0, 0, 256, 256);
-        for (let i = 0; i < 220; i++) {
-          const r = 4 + Math.random() * 26;
-          ctx.fillStyle = ["#ff2d00", "#ff7a18", "#ffc400"][i % 3];
-          ctx.globalAlpha = 0.25 + Math.random() * 0.6;
-          ctx.beginPath();
-          ctx.arc(Math.random() * 256, Math.random() * 256, r, 0, 6.3);
-          ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-      },
-    },
-    galaxy: {
-      rgb: [1, 1, 1],
-      emissive: 0.6,
-      pattern: (ctx) => {
-        ctx.fillStyle = "#141033";
-        ctx.fillRect(0, 0, 256, 256);
-        for (let i = 0; i < 90; i++) {
-          const r = Math.random() * 1.8 + 0.4;
-          ctx.fillStyle = ["#fff", "#ffd9f2", "#a9c9ff"][i % 3];
-          ctx.beginPath();
-          ctx.arc(Math.random() * 256, Math.random() * 256, r, 0, 6.3);
-          ctx.fill();
-        }
-      },
-    },
-    aurora: {
-      rgb: [1, 1, 1],
-      emissive: 0.6,
-      pattern: (ctx) => {
-        for (let y = 0; y < 256; y += 4) {
-          const t = y / 256;
-          ctx.fillStyle = `hsl(${150 + Math.sin(t * 9.4) * 40}, 90%, ${38 + Math.sin(t * 15.7) * 14}%)`;
-          ctx.fillRect(0, y, 256, 4);
-        }
-      },
-    },
-  };
   let skinBase = SKINS.core;
   const ballMat = makeMaterial("mBall", skinBase.rgb, skinBase.emissive);
   const leadMat = new StandardMaterial("mLead", scene);
@@ -295,17 +202,17 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
   const skinTextures = new Map<string, DynamicTexture>();
   function skinTexture(id: string): DynamicTexture | null {
-    const def = SKINS[id];
-    if (!def?.pattern) return null;
+    if (!SKINS[id]?.pattern) return null;
     let t = skinTextures.get(id);
     if (!t) {
       t = new DynamicTexture(`skin-${id}`, 256, scene, false);
-      def.pattern(t.getContext() as CanvasRenderingContext2D);
+      drawSkin(t.getContext() as unknown as CanvasRenderingContext2D, id, 256);
       t.update();
       skinTextures.set(id, t);
     }
     return t;
   }
+
   const ballMesh = MeshBuilder.CreateSphere("ball", { diameter: C.ballRadius * 2 }, scene);
   ballMesh.material = ballMat;
   ballMesh.parent = tower;
@@ -458,7 +365,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           ballPulse = 1;
           // No hit-stop on explosions (owner: repeated freezes read as
           // jitter). Time effects are the sim-side slow-mo showcase only.
-        } else if ((e.kind === "mine" || e.kind === "shield") && e.id !== undefined) {
+        } else if ((e.kind === "mine" || e.kind === "shield" || e.kind === "mineblast") && e.id !== undefined) {
           // Mine detonation: violent red burst; on a shield hit you survive it.
           const info = blockInfo.get(e.id);
           blockMeshes.get(e.id)?.setEnabled(false);
@@ -496,17 +403,18 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
             }
           }
           ballPulse = 1;
-          pendingHitStop = 220;
           if (e.kind === "mine") {
-            // Death scene (owner): the BALL itself shatters — big bright
-            // shards of its own color — before the overlay fades in.
+            pendingHitStop = 220; // the death beat — never on ordinary blasts
+            // Death scene (owner): the BALL itself shatters before the
+            // overlay fades in.
             ballMesh.computeWorldMatrix(true);
             const bp = ballMesh.position.clone();
             ballMesh.setEnabled(false);
-            for (let i = 0; i < 30; i++) {
-              const size = 16 + Math.random() * 30;
+            for (let i = 0; i < 64; i++) {
+              // Small plain-colored debris, no skin texture (owner).
+              const size = 7 + Math.random() * 13;
               const m = MeshBuilder.CreateBox("ball-sh", { size }, scene);
-              m.material = ballMat;
+              m.material = deathMats[i % deathMats.length];
               m.parent = tower;
               m.position = bp.add(
                 new Vector3((Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70),
