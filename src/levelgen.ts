@@ -152,7 +152,28 @@ export function buildTier(seed: number, tier: number): BlockDef[] {
     const near = C.gridX0 - half; // center of the low-side gutter
     const far = C.gridX0 + C.gridN * C.cell + half; // center of the high side
     const stoneP = Math.min(C.stonePMax, 0.2 + tier * 0.03);
+    // Mines guard the border from the mine belt onward, so hugging a wall is
+    // a risk, not an exploit (owner: you could farm points along an edge).
+    const borderMineP = tier < C.mineFreeTiers ? 0 : Math.min(0.34, 0.14 + (tier - C.mineFreeTiers) * 0.03);
     const put = (cx: number, cz: number, hx: number, hz: number) => {
+      if (rng() < borderMineP) {
+        out.push({
+          id: nextId++,
+          groupId: nextGroup++,
+          type: "mine",
+          primary: true,
+          cells: 1,
+          cx,
+          cy: restY - 32,
+          cz,
+          hx: 32,
+          hy: 32,
+          hz: 32,
+          threshold: Infinity,
+          deps: [],
+        });
+        return;
+      }
       if (rng() < 0.24) return; // a gap — the ONLY way through the border
       const type: BlockType = rng() < stoneP ? "stone" : "glass";
       const h = typeHeight(type);

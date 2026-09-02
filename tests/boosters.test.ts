@@ -132,9 +132,9 @@ describe("meta", () => {
 });
 
 describe("tower borders and biomes", () => {
-  it("the wall gutters are covered — no infinite free-fall along an edge", () => {
-    // Hug each wall and check the ball actually meets blocks (owner report:
-    // you could ride the 200-unit gutter down forever).
+  it("riding a wall is never free — blocks, or a border mine, stop you", () => {
+    // Hug each wall: the edge must either cost hits or kill (owner report:
+    // you could ride the 200-unit gutter down forever, farming points).
     const corners: [number, number][] = [
       [1, 0],
       [-1, 0],
@@ -148,8 +148,18 @@ describe("tower borders and biomes", () => {
         const events = step(sim, tx, tz);
         hits += events.filter((e) => e.kind === "break" || e.kind === "bumper" || e.kind === "spike").length;
       }
-      expect(hits).toBeGreaterThan(3);
+      expect(sim.finished || hits > 3).toBe(true);
     }
+  });
+
+  it("the border ring is mined from the mine belt onward", () => {
+    const edge = (t: number) =>
+      buildTier(20260901, t).filter(
+        (b) => b.type === "mine" && (b.cx < CONFIG.gridX0 || b.cx > CONFIG.gridX0 + CONFIG.gridN * CONFIG.cell),
+      ).length;
+    expect(edge(1)).toBe(0); // grace tiers stay safe
+    const deep = [6, 7, 8, 9, 10].reduce((n, t) => n + edge(t), 0);
+    expect(deep).toBeGreaterThan(0);
   });
 
   it("biome palette advances and crossfades with depth", () => {

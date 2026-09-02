@@ -10,48 +10,54 @@ export interface Biome {
   glass: RGB;
   stone: RGB;
   fogNear: number; // multiplier on CONFIG.fogStart/fogEnd
+  ambient: number; // light multiplier — deep biomes must stay READABLE (owner)
 }
 
 export const BIOMES: Biome[] = [
   {
     name: "GLACIER",
-    sky: [0.05, 0.07, 0.12],
-    wall: [0.26, 0.32, 0.48],
-    glass: [0.3, 0.75, 0.95],
-    stone: [0.42, 0.33, 0.24],
-    fogNear: 1,
+    sky: [0.07, 0.09, 0.16],
+    wall: [0.34, 0.42, 0.62],
+    glass: [0.35, 0.8, 1.0],
+    stone: [0.55, 0.44, 0.32],
+    fogNear: 1.05,
+    ambient: 1.05,
   },
   {
     name: "VERDANT",
-    sky: [0.04, 0.1, 0.08],
-    wall: [0.2, 0.4, 0.3],
-    glass: [0.35, 0.95, 0.6],
-    stone: [0.35, 0.3, 0.2],
-    fogNear: 0.95,
+    sky: [0.06, 0.13, 0.1],
+    wall: [0.28, 0.52, 0.4],
+    glass: [0.4, 1.0, 0.65],
+    stone: [0.52, 0.44, 0.3],
+    fogNear: 1.0,
+    ambient: 1.1,
   },
   {
     name: "MAGMA",
-    sky: [0.11, 0.04, 0.03],
-    wall: [0.42, 0.2, 0.14],
-    glass: [1.0, 0.55, 0.2],
-    stone: [0.32, 0.18, 0.14],
-    fogNear: 0.85,
+    sky: [0.2, 0.08, 0.06],
+    wall: [0.62, 0.32, 0.22],
+    glass: [1.0, 0.62, 0.28],
+    stone: [0.55, 0.34, 0.24],
+    fogNear: 1.0,
+    ambient: 1.22, // was a cave — the owner could not see the blocks
   },
   {
     name: "NEON",
-    sky: [0.07, 0.03, 0.13],
-    wall: [0.36, 0.18, 0.5],
-    glass: [0.85, 0.35, 1.0],
-    stone: [0.3, 0.24, 0.38],
-    fogNear: 0.9,
+    sky: [0.11, 0.05, 0.2],
+    wall: [0.42, 0.22, 0.6],
+    glass: [0.86, 0.4, 1.0],
+    stone: [0.44, 0.34, 0.54],
+    fogNear: 1.0,
+    ambient: 1.05,
   },
   {
     name: "ABYSS",
-    sky: [0.02, 0.02, 0.04],
-    wall: [0.16, 0.18, 0.26],
-    glass: [0.45, 0.85, 0.95],
-    stone: [0.2, 0.2, 0.24],
-    fogNear: 0.7, // the deep is claustrophobic
+    sky: [0.05, 0.055, 0.09],
+    wall: [0.28, 0.32, 0.46],
+    glass: [0.5, 0.9, 1.0],
+    stone: [0.38, 0.38, 0.46],
+    fogNear: 0.85,
+    ambient: 1.15,
   },
 ];
 
@@ -86,5 +92,6 @@ export function paletteAt(tier: number): Biome {
     glass: lerpRGB(cur.glass, next.glass, k),
     stone: lerpRGB(cur.stone, next.stone, k),
     fogNear: lerp(cur.fogNear, next.fogNear, k),
+    ambient: lerp(cur.ambient, next.ambient, k),
   };
 }

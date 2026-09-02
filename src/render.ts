@@ -565,6 +565,10 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       MATS.glass.diffuseColor.set(pal.glass[0], pal.glass[1], pal.glass[2]);
       MATS.glass.emissiveColor.set(pal.glass[0] * 0.25, pal.glass[1] * 0.25, pal.glass[2] * 0.25);
       MATS.stone.diffuseColor.set(pal.stone[0], pal.stone[1], pal.stone[2]);
+      // A little self-lit stone keeps it visible in the dark layers.
+      MATS.stone.emissiveColor.set(pal.stone[0] * 0.16, pal.stone[1] * 0.16, pal.stone[2] * 0.16);
+      hemi.intensity = 0.9 * pal.ambient;
+      sun.intensity = 0.7 * pal.ambient;
       const palFog = pal.fogNear;
 
       const maxRad = (C.maxVisualTiltDeg * Math.PI) / 180;
