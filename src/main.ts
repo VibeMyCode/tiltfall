@@ -17,7 +17,8 @@ import {
   trackRunEnd,
   type DailyProgress,
 } from "./meta";
-import { activateBooster, createSim, jump, predictPath, step, type SimState } from "./sim";
+import { activateBooster, createSim, jump, predictPath, step, type SimEvent, type SimState } from "./sim";
+import { SFX, initAudio, isMuted, toggleMute } from "./sfx";
 import { attachInput } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
@@ -94,19 +95,56 @@ function tryActivate(id: BoosterId): void {
   inventory[id]--;
   save("tf.inv", inventory);
   activateBooster(sim, id);
+  SFX.booster();
   trackBoosterUse(daily);
   save("tf.daily", daily);
 }
 
 function tryJump(): void {
-  if (jump(sim)) renderer.jumpFx(sim.ball);
+  if (jump(sim)) {
+    renderer.jumpFx(sim.ball);
+    SFX.jump();
+  }
 }
+
+// One voice per event kind, rate-limited so a big cascade stays musical
+// rather than turning into white noise.
+let sfxBudget = 0;
+let sfxTick = -1;
+function playSfx(events: SimEvent[]): void {
+  if (sim.tick !== sfxTick) {
+    sfxTick = sim.tick;
+    sfxBudget = 3;
+  }
+  for (const e of events) {
+    if (e.kind === "mine") SFX.mine();
+    else if (e.kind === "mineblast") SFX.mineBlast();
+    else if (e.kind === "shield") SFX.shield();
+    else if (e.kind === "bumper") SFX.bumper();
+    else if (e.kind === "spike") SFX.spike();
+    else if (e.kind === "break" && sfxBudget > 0) {
+      sfxBudget--;
+      if (e.btype === "bomb") SFX.bomb();
+      else if (e.btype === "stone") SFX.stone();
+      else SFX.glass(sim.combo);
+    }
+  }
+}
+
+let started = false; // the sim waits behind the title screen
 
 const ui = createUI({
   onReplay: newRun,
   invert: { get: () => input.invertY(), toggle: () => input.toggleInvertY() },
   onActivate: tryActivate,
   onJump: tryJump,
+  best: () => best,
+  mute: { get: () => isMuted(), toggle: () => toggleMute() },
+  onStart: () => {
+    initAudio(); // browsers only allow audio after a gesture
+    started = true;
+    newRun();
+  },
 });
 
 let resultsTimer = 0;
@@ -148,6 +186,7 @@ function showResultsNow(): void {
         const price = CONFIG.boosters[id].price;
         if (bank < price || !perksAt(level).boosters.includes(id)) return;
         bank -= price;
+        SFX.buy();
         inventory[id] = (inventory[id] ?? 0) + 1;
         save("tf.bank", bank);
         save("tf.inv", inventory);
@@ -166,6 +205,7 @@ function showResultsNow(): void {
         if (bank < cost) return false;
         bank -= cost;
         level++;
+        SFX.levelUp();
         save("tf.bank", bank);
         save("tf.level", level);
         return true;
@@ -193,6 +233,7 @@ function showResultsNow(): void {
         if (!task || daily.claimed[id]) return;
         if ((daily.progress[id] ?? 0) < task.goal) return;
         daily.claimed[id] = true;
+        SFX.claim();
         bank += CONFIG.dailyRewardEach;
         if (dailyTasks.every((t) => daily.claimed[t.id]) && !daily.allClaimed) {
           daily.allClaimed = true;
@@ -250,7 +291,9 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   // Smooth slow-mo showcase for BOTH quake and chain cascades (no hit-stop —
   // the ball glides while explosions bloom around it).
   const slowMo = sim.queue.length > 0 && sim.tick - sim.chainBlastTick < 720;
-  if (hitStopMs > 0) {
+  if (!started) {
+    accumulator = 0; // frozen behind the title screen
+  } else if (hitStopMs > 0) {
     hitStopMs = Math.max(0, hitStopMs - frameMs);
   } else {
     accumulator += frameMs * (slowMo ? CONFIG.slowMoScale : 1);
@@ -261,6 +304,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     const events = step(sim, s.x, s.z);
     if (events.length) {
       renderer.applyEvents(events);
+      playSfx(events);
       trackEvents(daily, events, sim);
       hitStopMs = Math.max(hitStopMs, renderer.consumeHitStop());
       if (events.some((e) => e.kind === "finish")) {

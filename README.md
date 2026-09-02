@@ -19,17 +19,14 @@ banned-API source grep, smoke. Headless-verified: cascade, steering by pointer A
 keyboard, full descent → results → replay, portrait framing, median 60 fps, zero
 console errors.
 
-**M2 done:** draft gates (§3.4 — ball captured after each tier, sim frozen, 3-card
-draft with countdown/auto-pick, keys 1-2-3), 8 cards via cards.ts/cardParams (magnet
-deferred to M3 crystals; Pogo added), runtime bomb blasts (card-scalable), bumpers +
-spikes, anti-stall nudge + tier pity-shatter, §4.3 probe validation (16 scripted
-descents, par → finish bonus). Finish = floor touch (§3.2). 15 unit tests green;
-headless suite covers gates end-to-end.
-
-**Left:** M3 meta (save, crystals, upgrade track, Free Fall, quests) / M4 daily+ghost /
-M5 polish.
-
-**Next:** owner playtest of M2 cards, then M3.
+**Shipped (M0-M5):** endless generative tower (fresh random seed per run,
+tiers streamed as you fall), mines end the run, jump with cooldown/charges,
+BANK economy — score funds boosters (one-shot QUAKE/CHAIN, run-long ×2/HEAVY/
+AGILITY, instant SHIELD) and 15 player levels (jump power, procedural skins,
+free shields, extra jump charge, booster unlocks cheapest-first), daily tasks,
+title screen, synthesized WebAudio SFX (zero audio files), PWA manifest for
+"add to home screen". Tests: 18 unit (determinism, banned APIs, boosters, jump,
+mines/shields, meta/daily) + a headless suite driving a real-GPU browser.
 
 ### Milestones (from SPEC.md §11)
 

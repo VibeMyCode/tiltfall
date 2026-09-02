@@ -60,6 +60,9 @@ export interface UIHandlers {
   invert: { get: () => boolean; toggle: () => boolean };
   onActivate: (id: BoosterId) => void;
   onJump: () => void;
+  onStart: () => void; // title screen → first run (also unlocks audio)
+  mute: { get: () => boolean; toggle: () => boolean };
+  best: () => { score: number; depth: number };
 }
 
 export function createUI(h: UIHandlers): UI {
@@ -71,13 +74,43 @@ export function createUI(h: UIHandlers): UI {
     <div class="hud-item hud-combo" id="hud-combo">×1</div>
     <div class="hud-item hud-depth" id="hud-depth">◈ 0</div>
     <div class="hud-item hud-shield hidden" id="hud-shield">⛨ 0</div>
-    <button class="hud-item hud-toggle" id="hud-invert"></button>`;
+    <button class="hud-item hud-toggle" id="hud-invert"></button>
+    <button class="hud-item hud-toggle" id="hud-mute"></button>`;
   document.body.appendChild(hud);
   const invertBtn = hud.querySelector<HTMLButtonElement>("#hud-invert")!;
   const renderInvert = (on: boolean) => (invertBtn.textContent = `Y ${on ? "⇅ INV" : "↓ STD"}`);
   renderInvert(h.invert.get());
   invertBtn.addEventListener("click", () => renderInvert(h.invert.toggle()));
   if (CONFIG.targetControl) invertBtn.style.display = "none";
+  const muteBtn = hud.querySelector<HTMLButtonElement>("#hud-mute")!;
+  const renderMute = (m: boolean) => (muteBtn.textContent = m ? "♪ OFF" : "♪ ON");
+  renderMute(h.mute.get());
+  muteBtn.addEventListener("click", () => renderMute(h.mute.toggle()));
+
+  // TITLE screen: first thing the player sees; its button also unlocks audio.
+  const title = document.createElement("div");
+  title.className = "title";
+  title.innerHTML = `
+    <div class="title-card">
+      <h1>TILTFALL</h1>
+      <p class="tagline">Steer the falling ball. Smash everything. Dodge the mines.</p>
+      <div class="title-best hidden" id="title-best"></div>
+      <button id="title-play">PLAY</button>
+      <div class="title-hint">drag anywhere to steer · <b>SPACE</b> or the button to jump · numbers activate boosters</div>
+    </div>`;
+  document.body.appendChild(title);
+  document.body.classList.add("titlescreen");
+  const b = h.best();
+  if (b.score > 0) {
+    const tb = title.querySelector<HTMLElement>("#title-best")!;
+    tb.textContent = `BEST ${b.score} · depth ${b.depth}`;
+    tb.classList.remove("hidden");
+  }
+  title.querySelector<HTMLButtonElement>("#title-play")!.addEventListener("click", () => {
+    title.classList.add("gone");
+    document.body.classList.remove("titlescreen");
+    h.onStart();
+  });
 
   const bar = document.createElement("div");
   bar.className = "booster-bar";
