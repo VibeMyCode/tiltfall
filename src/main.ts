@@ -2,12 +2,10 @@
 // ends on a mine. Bank → levels (jump power/cooldown, skins, mine shields),
 // boosters, daily tasks (owner design M3+M4).
 import "./style.css";
-import { CONFIG } from "./config";
+import { CONFIG, jumpCooldownTicks } from "./config";
 import { BOOSTER_ORDER, type BoosterId } from "./boosters";
 import {
   freshDaily,
-  jumpCooldownAt,
-  jumpPowerAt,
   levelCost,
   nextPerkText,
   perksAt,
@@ -69,8 +67,8 @@ let banked = false;
 const simOpts = () => {
   const p = perksAt(level);
   return {
-    jumpPower: jumpPowerAt(level),
-    jumpCooldownTicks: jumpCooldownAt(level),
+    jumpPower: CONFIG.jumpBasePower,
+    jumpCooldownTicks: jumpCooldownTicks(),
     jumpMaxCharges: p.jumpCharges,
     shields: p.shields, // free shields are a LEVEL perk (L5, L13)
   };
@@ -245,8 +243,7 @@ function showResultsNow(): void {
     level: {
       current: () => level,
       cost: () => levelCost(level),
-      jumpMul: () => jumpPowerAt(level) / CONFIG.jumpBasePower,
-      jumpCdS: () => jumpCooldownAt(level) * CONFIG.dt,
+      jumpCdS: () => jumpCooldownTicks() * CONFIG.dt,
       shields: () => perksAt(level).shields,
       jumpCharges: () => perksAt(level).jumpCharges,
       nextText: () => nextPerkText(level),

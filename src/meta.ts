@@ -8,11 +8,6 @@ import type { SimEvent, SimState } from "./sim";
 export const levelCost = (level: number): number =>
   Math.round(CONFIG.levelBaseCost * Math.pow(CONFIG.levelCostGrowth, level - 1));
 
-export const jumpPowerAt = (level: number): number => CONFIG.jumpBasePower + (level - 1) * CONFIG.jumpPowerPerLevel;
-
-export const jumpCooldownAt = (level: number): number =>
-  Math.max(CONFIG.jumpMinCooldownTicks, CONFIG.jumpBaseCooldownTicks - (level - 1) * CONFIG.jumpCooldownPerLevel);
-
 export interface Perks {
   skins: string[];
   boosters: string[];
@@ -43,11 +38,8 @@ export function nextPerkText(level: number): string {
   if (row?.booster) bits.push(`unlock booster: ${row.booster.toUpperCase()}`);
   if (row?.shield) bits.push(`+${row.shield} free shield per run`);
   if (row?.jumpCharge) bits.push(`+${row.jumpCharge} jump charge`);
-  bits.push(
-    `jump ×${(jumpPowerAt(level + 1) / CONFIG.jumpBasePower).toFixed(2)}`,
-    `reload ${(jumpCooldownAt(level + 1) * CONFIG.dt).toFixed(1)}s`,
-  );
-  return bits.join(" · ");
+  // Jump power and reload are the same at every level, so they are not news.
+  return bits.join(" · ") || "no new perks";
 }
 
 // --- Daily tasks -----------------------------------------------------------

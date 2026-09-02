@@ -65,14 +65,12 @@ export const CONFIG = {
   },
   slowMoScale: 0.35, // playback speed for quake/chain showcase cascades
 
-  // JUMP (owner design): Space / on-screen button; the ball hops up with a
-  // cooldown. Player LEVELS (bought with banked score) raise the jump and
-  // shrink the cooldown; even levels unlock skins; L5/L10 grant mine shields.
+  // JUMP (owner design): Space / on-screen button; the ball hops up, then must
+  // recharge. Power is flat across levels on purpose — see jumpCooldownTicks()
+  // below: a stronger jump cannot exist without a longer wait behind it, so
+  // levels buy skins, boosters, shields and a second charge instead.
   jumpBasePower: 1000,
-  jumpPowerPerLevel: 90,
-  jumpBaseCooldownTicks: 480,
-  jumpCooldownPerLevel: 25,
-  jumpMinCooldownTicks: 180,
+  jumpHoverMargin: 1.6, // cooldown ÷ fall-back time; at 1.0 the ball breaks even
   levelBaseCost: 260,
   levelCostGrowth: 1.7,
 
@@ -185,3 +183,13 @@ export const CONFIG = {
   fogStart: 2200,
   fogEnd: 9000,
 } as const;
+
+// A jump SETS upward velocity instead of adding to it, so the only thing
+// stopping a player from climbing forever is having to wait out the fall.
+// Gravity cancels the launch in jumpBasePower/g0 seconds and needs as long
+// again to bring the ball home, so 2·power/g0 is the break-even cooldown —
+// anything shorter is a net rise, repeatable without limit. The margin is what
+// turns break-even into an actual descent, and it is the whole reason jump
+// power no longer scales with level: raising power raises this floor with it.
+export const jumpCooldownTicks = (): number =>
+  Math.ceil(((2 * CONFIG.jumpBasePower) / CONFIG.g0 / CONFIG.dt) * CONFIG.jumpHoverMargin);

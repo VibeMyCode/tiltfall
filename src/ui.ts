@@ -28,7 +28,6 @@ export interface ResultsModel {
   level: {
     current: () => number;
     cost: () => number;
-    jumpMul: () => number; // jump strength relative to level 1 (owner)
     jumpCdS: () => number;
     shields: () => number;
     jumpCharges: () => number;
@@ -203,7 +202,7 @@ export function createUI(h: UIHandlers): UI {
     lb.innerHTML = `
       <div class="lvl-head">
         <span class="lvl-name">LEVEL <b>${lvl}</b></span>
-        <span class="lvl-stats"><i>jump</i><b>×${m.level.jumpMul().toFixed(2)}</b><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${charges > 1 ? `<i>charges</i><b>${charges}</b>` : ""}${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
+        <span class="lvl-stats"><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${charges > 1 ? `<i>charges</i><b>${charges}</b>` : ""}${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
       </div>
       <div class="lvl-next"><span>NEXT</span> ${m.level.nextText()}</div>
       <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;

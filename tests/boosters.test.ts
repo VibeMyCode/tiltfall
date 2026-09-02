@@ -4,7 +4,7 @@ import { BOOSTER_MODE, BOOSTER_ORDER, boosterPrice } from "../src/boosters";
 import { CONFIG } from "../src/config";
 import { buildTier } from "../src/levelgen";
 import { BIOME_TIER_SPAN, biomeNameAt, paletteAt } from "../src/biomes";
-import { jumpCooldownAt, jumpPowerAt, levelCost, nextPerkText, perksAt, rollDaily, skinsAt } from "../src/meta";
+import { levelCost, nextPerkText, perksAt, rollDaily, skinsAt } from "../src/meta";
 import { activateBooster, createSim, jump, step } from "../src/sim";
 
 describe("boosters", () => {
@@ -87,9 +87,6 @@ describe("mines", () => {
 describe("meta", () => {
   it("level curve: costs grow, jump improves, perks unlock in order", () => {
     expect(levelCost(2)).toBeGreaterThan(levelCost(1));
-    expect(jumpPowerAt(5)).toBeGreaterThan(jumpPowerAt(1));
-    expect(jumpCooldownAt(5)).toBeLessThan(jumpCooldownAt(1));
-    expect(jumpCooldownAt(99)).toBe(CONFIG.jumpMinCooldownTicks);
     expect(skinsAt(1)).toContain("core");
     expect(skinsAt(8).length).toBeGreaterThan(skinsAt(1).length);
     // Perks: shields at L5/L13, extra jump charge at L7, boosters cheapest-first.
@@ -119,6 +116,26 @@ describe("meta", () => {
     expect(jump(sim)).toBe(false); // dry
     for (let t = 0; t < 301; t++) step(sim, 0, 0);
     expect(jump(sim)).toBe(true); // one charge refilled
+  });
+
+  it("spamming the jump slows the fall but never climbs the tower", () => {
+    // The exploit this guards: if the jump recharged faster than the ball takes
+    // to fall back, a player could hold altitude forever and farm a safe pocket
+    // instead of descending. One hop lifts the ball power²/2g ≈ 156 units — what
+    // must never happen is that lift accumulating across hops.
+    const oneHop = (CONFIG.jumpBasePower * CONFIG.jumpBasePower) / (2 * CONFIG.g0);
+    for (const seed of [20260902, 7, 99]) {
+      const sim = createSim(seed);
+      const startY = sim.ball.y;
+      let peak = sim.ball.y; // Y grows downward, so the high point is the minimum
+      for (let t = 0; t < 120 * 30 && !sim.finished; t++) {
+        jump(sim); // false while recharging — this is the fastest legal rate
+        step(sim, 0, 0);
+        peak = Math.min(peak, sim.ball.y);
+      }
+      expect(startY - peak).toBeLessThan(oneHop * 1.5);
+      expect(sim.ball.y).toBeGreaterThan(startY + 1000);
+    }
   });
 
   it("daily tasks are deterministic per date and differ across dates", () => {

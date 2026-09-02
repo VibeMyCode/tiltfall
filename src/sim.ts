@@ -2,7 +2,7 @@
 // no Date, no transcendentals. ENDLESS tower streamed from the run seed;
 // the run ends only on a MINE (owner design). Same seed + same input log +
 // same booster/jump activations ⇒ same run.
-import { CONFIG } from "./config";
+import { CONFIG, jumpCooldownTicks } from "./config";
 import { BOOSTER_MODE, type BoosterId } from "./boosters";
 import { buildTier, type BlockDef } from "./levelgen";
 
@@ -81,7 +81,7 @@ export function createSim(seed: number, opts?: SimOpts): SimState {
     runOn: {},
     chainBlastTick: -1e9,
     jumpPower: opts?.jumpPower ?? CONFIG.jumpBasePower,
-    jumpCooldownTicks: opts?.jumpCooldownTicks ?? CONFIG.jumpBaseCooldownTicks,
+    jumpCooldownTicks: opts?.jumpCooldownTicks ?? jumpCooldownTicks(),
     jumpCd: 0,
     jumpCharges: opts?.jumpMaxCharges ?? 1,
     jumpMaxCharges: opts?.jumpMaxCharges ?? 1,
