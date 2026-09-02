@@ -142,6 +142,53 @@ export function buildTier(seed: number, tier: number): BlockDef[] {
     }
   }
 
+  // 3b. BORDER ring: the 8×8 grid leaves a 200-unit gutter along each wall,
+  // and a player could ride it down forever (owner). Fill the gutter with
+  // 2-cell-wide slabs, leaving occasional gaps so it is a challenge, not a
+  // seal. These live outside the occupancy grid.
+  {
+    const gutter = C.gridX0; // 200 on each side
+    const half = gutter / 2;
+    const near = C.gridX0 - half; // center of the low-side gutter
+    const far = C.gridX0 + C.gridN * C.cell + half; // center of the high side
+    const stoneP = Math.min(C.stonePMax, 0.2 + tier * 0.03);
+    const put = (cx: number, cz: number, hx: number, hz: number) => {
+      if (rng() < 0.24) return; // a gap — the ONLY way through the border
+      const type: BlockType = rng() < stoneP ? "stone" : "glass";
+      const h = typeHeight(type);
+      out.push({
+        id: nextId++,
+        groupId: nextGroup++,
+        type,
+        primary: true,
+        cells: 2,
+        cx,
+        cy: restY - h / 2,
+        cz,
+        hx,
+        hy: h / 2,
+        hz,
+        threshold: C.thresholds[type],
+        deps: [],
+      });
+    };
+    for (let i = 0; i < C.gridN; i += 2) {
+      const along = C.gridX0 + i * C.cell + C.cell; // center of a 2-cell span
+      put(along, near, C.cell, half); // north edge
+      put(along, far, C.cell, half); // south edge
+      put(near, along, half, C.cell); // west edge
+      put(far, along, half, C.cell); // east edge
+    }
+    // Corners, so the diagonal gaps are not free either.
+    for (const [cx, cz] of [
+      [near, near],
+      [near, far],
+      [far, near],
+      [far, far],
+    ])
+      put(cx, cz, half, half);
+  }
+
   // 4. Unbreakables: two bumpers everywhere; spikes ramp with depth; MINES
   // after the grace tiers — touching one ends the run (owner design).
   placeSingle("bumper", 50);

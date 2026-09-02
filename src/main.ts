@@ -23,6 +23,7 @@ import { attachInput, isTouch } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
 import { cloudLoad, cloudSave, haptic, initTelegram, inTelegram, shareScore } from "./telegram";
+import { biomeNameAt } from "./biomes";
 
 const DT_MS = 1000 * CONFIG.dt;
 const MAX_FRAME_MS = 100;
@@ -118,6 +119,7 @@ const newRun = () => {
   clearTimeout(resultsTimer);
   sim = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
   banked = false;
+  lastBiome = biomeNameAt(0);
   renderer.setLayout(sim.blocks);
   ui.hideResults();
 };
@@ -178,6 +180,7 @@ function playSfx(events: SimEvent[]): void {
 }
 
 let started = false; // the sim waits behind the title screen
+let lastBiome = "";
 
 const ui = createUI({
   onReplay: newRun,
@@ -376,6 +379,12 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   renderer.setTrail(Boolean(sim.runOn.agility) && !sim.finished);
   renderer.setShield(sim.shields > 0);
   renderer.frame(frameMs, lastTilt);
+  // Announce a new biome the first time its depth is reached.
+  const biomeNow = biomeNameAt(sim.depth);
+  if (started && biomeNow !== lastBiome) {
+    lastBiome = biomeNow;
+    if (sim.depth > 0) ui.showBiome(biomeNow);
+  }
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth, sim.shields);
   ui.setJump(
     sim.jumpCharges > 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks,

@@ -20,6 +20,7 @@ import { CONFIG } from "./config";
 import type { BlockDef, BlockType } from "./levelgen";
 import type { SimEvent } from "./sim";
 import { SKINS, drawSkin } from "./skins";
+import { paletteAt } from "./biomes";
 
 interface Shard {
   mesh: Mesh;
@@ -219,6 +220,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
 
   const shards: Shard[] = [];
   const rings: Ring[] = [];
+  let ballSimY = 0; // sim-space depth, drives the biome palette
   let ballPulse = 0; // replaces camera shake (owner: shake reads as a glitch)
   let pendingHitStop = 0;
   // AGILITY comet tail: a hand-built ribbon over the ball's recent positions
@@ -354,6 +356,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     engine,
     scene,
     syncBall(b) {
+      ballSimY = b.y;
       ballMesh.position = toLocal(b.x, b.y, b.z);
     },
     applyEvents(events) {
@@ -551,6 +554,19 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     },
     frame(frameMs, tilt) {
       updateEffects(frameMs / 1000);
+      // BIOME palette by depth: sky, fog, walls and block tints crossfade
+      // as the ball descends through the layers.
+      const tierNow = Math.max(0, (ballSimY - C.firstTierTopY) / C.tierSpacing);
+      const pal = paletteAt(tierNow);
+      scene.clearColor.set(pal.sky[0], pal.sky[1], pal.sky[2], 1);
+      scene.fogColor.set(pal.sky[0], pal.sky[1], pal.sky[2]);
+      wallMat.diffuseColor.set(pal.wall[0], pal.wall[1], pal.wall[2]);
+      wallMat.emissiveColor.set(pal.wall[0] * 0.25, pal.wall[1] * 0.25, pal.wall[2] * 0.25);
+      MATS.glass.diffuseColor.set(pal.glass[0], pal.glass[1], pal.glass[2]);
+      MATS.glass.emissiveColor.set(pal.glass[0] * 0.25, pal.glass[1] * 0.25, pal.glass[2] * 0.25);
+      MATS.stone.diffuseColor.set(pal.stone[0], pal.stone[1], pal.stone[2]);
+      const palFog = pal.fogNear;
+
       const maxRad = (C.maxVisualTiltDeg * Math.PI) / 180;
       tower.rotation.z = C.visualTiltSignX * tilt.x * maxRad;
       tower.rotation.x = C.visualTiltSignZ * tilt.z * maxRad;
@@ -624,8 +640,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       const tiltMag = Math.max(Math.abs(tilt.x), Math.abs(tilt.z));
       const zoom = (1 + C.camTiltZoom * tiltMag) * aspectZoom;
       // Fog tracks the camera zoom — zooming out must never drown the tower.
-      scene.fogStart = C.fogStart * zoom;
-      scene.fogEnd = C.fogEnd * zoom;
+      scene.fogStart = C.fogStart * zoom * palFog;
+      scene.fogEnd = C.fogEnd * zoom * palFog;
       const gx = p.x;
       const gy = p.y + C.camHeight * zoom;
       const gz = p.z + C.camDist * zoom;

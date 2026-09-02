@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BOOSTER_MODE, BOOSTER_ORDER, boosterPrice } from "../src/boosters";
 import { CONFIG } from "../src/config";
 import { buildTier } from "../src/levelgen";
+import { BIOME_TIER_SPAN, biomeNameAt, paletteAt } from "../src/biomes";
 import { jumpCooldownAt, jumpPowerAt, levelCost, nextPerkText, perksAt, rollDaily, skinsAt } from "../src/meta";
 import { activateBooster, createSim, jump, step } from "../src/sim";
 
@@ -127,5 +128,36 @@ describe("meta", () => {
     expect(a.length).toBe(3);
     const c = rollDaily("2026-09-03");
     expect(a.map((t) => t.id).join()).not.toBe(c.map((t) => t.id).join());
+  });
+});
+
+describe("tower borders and biomes", () => {
+  it("the wall gutters are covered — no infinite free-fall along an edge", () => {
+    // Hug each wall and check the ball actually meets blocks (owner report:
+    // you could ride the 200-unit gutter down forever).
+    const corners: [number, number][] = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    for (const [tx, tz] of corners) {
+      const sim = createSim(20260901);
+      let hits = 0;
+      for (let t = 0; t < 4000 && !sim.finished; t++) {
+        const events = step(sim, tx, tz);
+        hits += events.filter((e) => e.kind === "break" || e.kind === "bumper" || e.kind === "spike").length;
+      }
+      expect(hits).toBeGreaterThan(3);
+    }
+  });
+
+  it("biome palette advances and crossfades with depth", () => {
+    expect(biomeNameAt(0)).toBe("GLACIER");
+    expect(biomeNameAt(BIOME_TIER_SPAN)).not.toBe("GLACIER");
+    const a = paletteAt(0);
+    const mid = paletteAt(BIOME_TIER_SPAN - 0.5); // inside the crossfade
+    expect(mid.sky).not.toEqual(a.sky);
+    expect(paletteAt(1).sky).toEqual(a.sky); // stable in the middle of a biome
   });
 });

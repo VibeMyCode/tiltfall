@@ -52,6 +52,7 @@ export interface UI {
     armed: Partial<Record<BoosterId, boolean>>,
     runOn: Partial<Record<BoosterId, boolean>>,
   ) => void;
+  showBiome: (name: string) => void;
   showResults: (r: ResultsModel) => void;
   hideResults: () => void;
 }
@@ -145,6 +146,11 @@ export function createUI(h: UIHandlers): UI {
     const i = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"].indexOf(e.code);
     if (i >= 0) h.onActivate(BOOSTER_ORDER[i]);
   });
+
+  // Biome banner: a brief title card when the tower changes its skin.
+  const biomeBanner = document.createElement("div");
+  biomeBanner.className = "biome-banner";
+  document.body.appendChild(biomeBanner);
 
   const results = document.createElement("div");
   results.className = "results hidden";
@@ -320,6 +326,12 @@ export function createUI(h: UIHandlers): UI {
         btn.addEventListener("click", () => h.onActivate(id));
         bar.appendChild(btn);
       });
+    },
+    showBiome(name) {
+      biomeBanner.textContent = name;
+      biomeBanner.classList.remove("show");
+      void biomeBanner.offsetWidth; // restart the animation
+      biomeBanner.classList.add("show");
     },
     showResults(r) {
       model = r;
