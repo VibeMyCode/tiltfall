@@ -23,6 +23,7 @@ export interface SimEvent {
 export interface SimOpts {
   jumpPower?: number;
   jumpCooldownTicks?: number;
+  jumpMaxCharges?: number;
   shields?: number;
   pityDisabled?: boolean;
 }
@@ -50,6 +51,8 @@ export interface SimState {
   jumpPower: number;
   jumpCooldownTicks: number;
   jumpCd: number;
+  jumpCharges: number; // ready charges (level perk grants more)
+  jumpMaxCharges: number;
   shields: number;
   tierEnterTick: number;
   currentTier: number;
@@ -80,6 +83,8 @@ export function createSim(seed: number, opts?: SimOpts): SimState {
     jumpPower: opts?.jumpPower ?? CONFIG.jumpBasePower,
     jumpCooldownTicks: opts?.jumpCooldownTicks ?? CONFIG.jumpBaseCooldownTicks,
     jumpCd: 0,
+    jumpCharges: opts?.jumpMaxCharges ?? 1,
+    jumpMaxCharges: opts?.jumpMaxCharges ?? 1,
     shields: opts?.shields ?? 0,
     tierEnterTick: 0,
     currentTier: 0,
@@ -110,9 +115,10 @@ export function activateBooster(s: SimState, id: BoosterId): void {
 
 // JUMP (owner design): Space / button; leveling raises power, cuts cooldown.
 export function jump(s: SimState): boolean {
-  if (s.finished || s.jumpCd > 0) return false;
+  if (s.finished || s.jumpCharges <= 0) return false;
   s.ball.vy = -s.jumpPower;
-  s.jumpCd = s.jumpCooldownTicks;
+  s.jumpCharges--;
+  if (s.jumpCd <= 0) s.jumpCd = s.jumpCooldownTicks; // one timer refills one charge
   return true;
 }
 
@@ -302,7 +308,13 @@ export function step(s: SimState, tiltX: number, tiltZ: number): SimEvent[] {
   const events: SimEvent[] = [];
   if (s.finished) return events;
   s.tick++;
-  if (s.jumpCd > 0) s.jumpCd--;
+  if (s.jumpCd > 0) {
+    s.jumpCd--;
+    if (s.jumpCd === 0 && s.jumpCharges < s.jumpMaxCharges) {
+      s.jumpCharges++;
+      if (s.jumpCharges < s.jumpMaxCharges) s.jumpCd = s.jumpCooldownTicks; // keep refilling
+    }
+  }
   ensureTiers(s);
   const { ball } = s;
   const C = CONFIG;

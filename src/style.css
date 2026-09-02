@@ -387,3 +387,32 @@ body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { displa
 
 .hud-shield { color: #7dffb3; }
 .hud-item.hidden { display: none; }
+
+.lvl-next {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #8fa2c9;
+}
+.lvl-next span {
+  display: inline-block;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: #0b1020;
+  background: #ffe08a;
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 6px;
+  font-weight: 800;
+}
+.shop-item.locked { opacity: 0.4; filter: grayscale(0.7); }
+.shop-lock { font-size: 10px; font-weight: 800; color: #8fa2c9; letter-spacing: 0.06em; }
+.jump-charges {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #b9ecff;
+}
+.jump-charges.hidden { display: none; }

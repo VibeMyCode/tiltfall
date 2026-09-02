@@ -7,6 +7,8 @@ import type { DailyTask } from "./meta";
 export interface ShopModel {
   bank: number;
   inventory: Record<BoosterId, number>;
+  unlockLevel: (id: BoosterId) => number;
+  unlocked: (id: BoosterId) => boolean;
   buy: (id: BoosterId) => void;
 }
 
@@ -27,6 +29,8 @@ export interface ResultsModel {
     jumpPower: () => number;
     jumpCdS: () => number;
     shields: () => number;
+    jumpCharges: () => number;
+    nextText: () => string;
     buy: () => boolean;
   };
   skins: { unlocked: () => string[]; current: () => string; select: (id: string) => void };
@@ -38,7 +42,7 @@ export interface ResultsModel {
 
 export interface UI {
   setHud: (timeS: number, score: number, combo: number, depth: number, shields: number) => void;
-  setJump: (readyFrac: number) => void;
+  setJump: (readyFrac: number, charges: number, maxCharges: number) => void;
   setBoosterBar: (
     inventory: Record<BoosterId, number>,
     armed: Partial<Record<BoosterId, boolean>>,
@@ -80,7 +84,7 @@ export function createUI(h: UIHandlers): UI {
   // JUMP button (owner design): thumb-reachable; Space on desktop.
   const jumpBtn = document.createElement("button");
   jumpBtn.className = "jump-btn";
-  jumpBtn.innerHTML = `<span class="jump-fill" id="jump-fill"></span><span class="jump-label">JUMP</span>`;
+  jumpBtn.innerHTML = `<span class="jump-fill" id="jump-fill"></span><span class="jump-label">JUMP</span><span class="jump-charges hidden" id="jump-charges">1</span>`;
   document.body.appendChild(jumpBtn);
   jumpBtn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
@@ -137,12 +141,14 @@ export function createUI(h: UIHandlers): UI {
     const lvl = m.level.current();
     const cost = m.level.cost();
     const shields = m.level.shields();
+    const charges = m.level.jumpCharges();
     const lb = el("level-box");
     lb.innerHTML = `
       <div class="lvl-head">
         <span class="lvl-name">LEVEL <b>${lvl}</b></span>
-        <span class="lvl-stats"><i>jump</i><b>${m.level.jumpPower()}</b><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
+        <span class="lvl-stats"><i>jump</i><b>${m.level.jumpPower()}</b><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${charges > 1 ? `<i>charges</i><b>${charges}</b>` : ""}${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
       </div>
+      <div class="lvl-next"><span>NEXT</span> ${m.level.nextText()}</div>
       <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;
     lb.querySelector<HTMLButtonElement>("#lvl-buy")!.addEventListener("click", () => {
       if (m.level.buy()) renderPanels();
@@ -169,12 +175,15 @@ export function createUI(h: UIHandlers): UI {
       const info = BOOSTER_INFO[id];
       const price = boosterPrice(id);
       const owned = m.shop.inventory[id] ?? 0;
+      const unlocked = m.shop.unlocked(id);
       const btn = document.createElement("button");
-      btn.className = "shop-item";
+      btn.className = `shop-item${unlocked ? "" : " locked"}`;
       btn.style.setProperty("--accent", info.color);
-      btn.disabled = m.shop.bank < price;
-      btn.title = info.desc; // hover tooltip — no card scroll from long texts
-      btn.innerHTML = `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`;
+      btn.disabled = !unlocked || m.shop.bank < price;
+      btn.title = unlocked ? info.desc : `Unlocks at level ${m.shop.unlockLevel(id)}`;
+      btn.innerHTML = unlocked
+        ? `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`
+        : `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><span class="shop-lock">LVL ${m.shop.unlockLevel(id)}</span>`;
       btn.addEventListener("click", () => {
         m.shop.buy(id);
         renderPanels();
@@ -222,9 +231,12 @@ export function createUI(h: UIHandlers): UI {
       }
       lastCombo = combo;
     },
-    setJump(readyFrac) {
+    setJump(readyFrac, charges, maxCharges) {
       el("jump-fill").style.setProperty("--f", String(readyFrac));
-      jumpBtn.classList.toggle("ready", readyFrac >= 1);
+      jumpBtn.classList.toggle("ready", charges > 0);
+      const badge = el("jump-charges");
+      badge.textContent = String(charges);
+      badge.classList.toggle("hidden", maxCharges <= 1);
     },
     setBoosterBar(inventory, armed, runOn) {
       const key = JSON.stringify([inventory, armed, runOn]);

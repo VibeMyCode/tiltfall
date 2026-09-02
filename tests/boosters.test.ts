@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BOOSTER_MODE, BOOSTER_ORDER, boosterPrice } from "../src/boosters";
 import { CONFIG } from "../src/config";
 import { buildTier } from "../src/levelgen";
-import { jumpCooldownAt, jumpPowerAt, levelCost, rollDaily, shieldsAt, skinsAt } from "../src/meta";
+import { jumpCooldownAt, jumpPowerAt, levelCost, nextPerkText, perksAt, rollDaily, skinsAt } from "../src/meta";
 import { activateBooster, createSim, jump, step } from "../src/sim";
 
 describe("boosters", () => {
@@ -84,14 +84,40 @@ describe("mines", () => {
 });
 
 describe("meta", () => {
-  it("level curve: costs grow, jump improves, skins/shields unlock", () => {
+  it("level curve: costs grow, jump improves, perks unlock in order", () => {
     expect(levelCost(2)).toBeGreaterThan(levelCost(1));
     expect(jumpPowerAt(5)).toBeGreaterThan(jumpPowerAt(1));
     expect(jumpCooldownAt(5)).toBeLessThan(jumpCooldownAt(1));
     expect(jumpCooldownAt(99)).toBe(CONFIG.jumpMinCooldownTicks);
     expect(skinsAt(1)).toContain("core");
     expect(skinsAt(8).length).toBeGreaterThan(skinsAt(1).length);
-    expect(shieldsAt(10)).toBe(2);
+    // Perks: shields at L5/L13, extra jump charge at L7, boosters cheapest-first.
+    expect(perksAt(4).shields).toBe(0);
+    expect(perksAt(5).shields).toBe(1);
+    expect(perksAt(13).shields).toBe(2);
+    expect(perksAt(6).jumpCharges).toBe(1);
+    expect(perksAt(7).jumpCharges).toBe(2);
+    expect(perksAt(1).boosters).toEqual(["agility"]);
+    expect(perksAt(6).boosters).toContain("heavy");
+    expect(perksAt(6).boosters).not.toContain("quake");
+    expect(perksAt(14).boosters).toContain("quake");
+    // Every booster becomes reachable, and pricier ones unlock later.
+    const order = CONFIG.levelPerks.filter((r) => r.booster);
+    for (let i = 1; i < order.length; i++) {
+      const prev = CONFIG.boosters[order[i - 1].booster as keyof typeof CONFIG.boosters].price;
+      const cur = CONFIG.boosters[order[i].booster as keyof typeof CONFIG.boosters].price;
+      expect(cur).toBeGreaterThan(prev);
+    }
+    expect(nextPerkText(4)).toMatch(/shield/i);
+  });
+
+  it("jump charges: a second charge means two hops before waiting", () => {
+    const sim = createSim(20260901, { jumpMaxCharges: 2, jumpCooldownTicks: 300 });
+    expect(jump(sim)).toBe(true);
+    expect(jump(sim)).toBe(true); // second charge
+    expect(jump(sim)).toBe(false); // dry
+    for (let t = 0; t < 301; t++) step(sim, 0, 0);
+    expect(jump(sim)).toBe(true); // one charge refilled
   });
 
   it("daily tasks are deterministic per date and differ across dates", () => {

@@ -40,8 +40,10 @@ export const CONFIG = {
   breakThroughLoss: 0.62,
   breakBounce: 0.32, // smashing DOWN through a piece pops the ball back up —
   // a beat of air time to aim at the next tier (owner design)
+  // Score is DENOMINATED ×1/10 (owner): small readable numbers, and every
+  // purchase costs several runs instead of one.
   thresholds: { glass: 8, stone: 22, bomb: 8 } as Record<string, number>,
-  points: { glass: 10, stone: 25, bomb: 30 } as Record<string, number>,
+  points: { glass: 1, stone: 3, bomb: 3 } as Record<string, number>,
 
   // Cascade (§4.2): a BOMB (yellow) breaks every piece whose center is within
   // blastRadius, rippling outward with the step delay. The blast is resolved
@@ -54,12 +56,12 @@ export const CONFIG = {
   // x2/heavy/agility run to the end of the run. Prices tuned so a typical run
   // affords 2-3 purchases.
   boosters: {
-    quake: { price: 3000, blastCells: 3.4 }, // one-shot: huge blast + slow-mo
-    chain: { price: 2500, blastMul: 2.2 }, // one-shot: mega-chain + slow-mo
-    x2: { price: 2200, scoreMul: 2 }, // run-long
-    heavy: { price: 1800, gravityMul: 1.12 }, // run-long: lead ball, stone = glass
-    shield: { price: 1500 }, // instant: +1 mine shield this run
-    agility: { price: 1200, tiltMul: 1.8 }, // run-long: razor steering + comet tail
+    quake: { price: 320, blastCells: 3.4 }, // one-shot: huge blast + slow-mo
+    chain: { price: 260, blastMul: 2.2 }, // one-shot: mega-chain + slow-mo
+    x2: { price: 220, scoreMul: 2 }, // run-long
+    heavy: { price: 180, gravityMul: 1.12 }, // run-long: lead ball, stone = glass
+    shield: { price: 150 }, // instant: +1 mine shield this run
+    agility: { price: 120, tiltMul: 1.8 }, // run-long: razor steering + comet tail
   },
   slowMoScale: 0.35, // playback speed for quake/chain showcase cascades
 
@@ -71,14 +73,33 @@ export const CONFIG = {
   jumpBaseCooldownTicks: 480,
   jumpCooldownPerLevel: 25,
   jumpMinCooldownTicks: 180,
-  levelBaseCost: 4000,
-  levelCostGrowth: 1.55,
-  skinUnlocks: { 1: "core", 2: "ember", 4: "prism", 6: "galaxy", 8: "aurora" } as Record<number, string>,
-  shieldLevels: [5, 10],
+  levelBaseCost: 260,
+  levelCostGrowth: 1.7,
+
+  // LEVEL PERK TABLE (owner): every level unlocks something concrete, and
+  // boosters appear cheapest-first so the shop grows with the player.
+  levelPerks: [
+    { level: 1, skin: "core", booster: "agility" },
+    { level: 2, skin: "ember" },
+    { level: 3, booster: "shield" },
+    { level: 4, skin: "prism" },
+    { level: 5, shield: 1 }, // a free shield every run
+    { level: 6, booster: "heavy" },
+    { level: 7, jumpCharge: 1 }, // a second jump before the cooldown
+    { level: 8, skin: "galaxy" },
+    { level: 9, booster: "x2" },
+    { level: 10, skin: "aurora" },
+    { level: 11, booster: "chain" },
+    { level: 12, skin: "checker" },
+    { level: 13, shield: 1 },
+    { level: 14, booster: "quake" },
+    { level: 15, skin: "magma" },
+  ] as { level: number; skin?: string; booster?: string; shield?: number; jumpCharge?: number }[],
 
   // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
-  dailyRewardEach: 800,
-  dailyRewardAll: 1500,
+  // Goals are multi-run by design (owner: 1-3 runs cleared everything).
+  dailyRewardEach: 90,
+  dailyRewardAll: 180,
 
   // Unbreakables (§4.1). Bumpers must FEEL like launchers; spikes stop the
   // ball dead (owner).

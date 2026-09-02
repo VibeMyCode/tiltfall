@@ -182,21 +182,75 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     { rgb: [number, number, number]; emissive: number; pattern?: (ctx: CanvasRenderingContext2D) => void }
   > = {
     core: { rgb: [0.35, 0.9, 1.0], emissive: 0.35 },
-    ember: { rgb: [1.0, 0.42, 0.12], emissive: 0.3 },
+    ember: {
+      rgb: [1, 1, 1],
+      emissive: 0.55,
+      pattern: (ctx) => {
+        // Molten shell: dark crust with glowing lava veins.
+        ctx.fillStyle = "#3a1206";
+        ctx.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 26; i++) {
+          ctx.strokeStyle = ["#ff7a18", "#ffd23f", "#ff3d00"][i % 3];
+          ctx.lineWidth = 2 + Math.random() * 5;
+          ctx.beginPath();
+          let x = Math.random() * 256;
+          let y = Math.random() * 256;
+          ctx.moveTo(x, y);
+          for (let s = 0; s < 5; s++) {
+            x += (Math.random() - 0.5) * 90;
+            y += (Math.random() - 0.5) * 90;
+            ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      },
+    },
     prism: {
       rgb: [1, 1, 1],
-      emissive: 0.22,
+      emissive: 0.55,
       pattern: (ctx) => {
-        const colors = ["#ff5f8f", "#ffb347", "#7dffb3", "#59c4ff", "#b48cff"];
-        for (let i = 0; i < 16; i++) {
+        const colors = ["#ff5f8f", "#ffb347", "#ffe08a", "#7dffb3", "#59c4ff", "#b48cff"];
+        for (let i = 0; i < 24; i++) {
           ctx.fillStyle = colors[i % colors.length];
-          ctx.fillRect(0, i * 16, 256, 16);
+          ctx.save();
+          ctx.translate(128, 128);
+          ctx.rotate((i * Math.PI) / 12);
+          ctx.fillRect(-180, -8, 360, 16); // rotating rainbow bands
+          ctx.restore();
         }
+      },
+    },
+    checker: {
+      rgb: [1, 1, 1],
+      emissive: 0.5,
+      pattern: (ctx) => {
+        for (let y = 0; y < 8; y++)
+          for (let x = 0; x < 8; x++) {
+            ctx.fillStyle = (x + y) % 2 ? "#0d1b2e" : "#59ffd0";
+            ctx.fillRect(x * 32, y * 32, 32, 32);
+          }
+      },
+    },
+    magma: {
+      rgb: [1, 1, 1],
+      emissive: 0.62,
+      pattern: (ctx) => {
+        ctx.fillStyle = "#140404";
+        ctx.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 220; i++) {
+          const r = 4 + Math.random() * 26;
+          ctx.fillStyle = ["#ff2d00", "#ff7a18", "#ffc400"][i % 3];
+          ctx.globalAlpha = 0.25 + Math.random() * 0.6;
+          ctx.beginPath();
+          ctx.arc(Math.random() * 256, Math.random() * 256, r, 0, 6.3);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
       },
     },
     galaxy: {
       rgb: [1, 1, 1],
-      emissive: 0.3,
+      emissive: 0.6,
       pattern: (ctx) => {
         ctx.fillStyle = "#141033";
         ctx.fillRect(0, 0, 256, 256);
@@ -211,7 +265,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     },
     aurora: {
       rgb: [1, 1, 1],
-      emissive: 0.28,
+      emissive: 0.6,
       pattern: (ctx) => {
         for (let y = 0; y < 256; y += 4) {
           const t = y / 256;
@@ -505,7 +559,11 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     setSkin(id) {
       skinBase = SKINS[id] ?? SKINS.core;
       ballMat.diffuseColor.set(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2]);
-      ballMat.diffuseTexture = skinTexture(id);
+      const tex = skinTexture(id);
+      ballMat.diffuseTexture = tex;
+      // The pattern must also drive the GLOW, otherwise the white emissive
+      // color washes it out to a solid ball (owner: "where are the patterns?").
+      ballMat.emissiveTexture = tex;
     },
     setBallMode(mode) {
       ballMesh.material = mode === "lead" ? leadMat : ballMat;

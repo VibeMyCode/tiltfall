@@ -9,8 +9,9 @@ import {
   jumpCooldownAt,
   jumpPowerAt,
   levelCost,
+  nextPerkText,
+  perksAt,
   rollDaily,
-  skinsAt,
   trackBoosterUse,
   trackEvents,
   trackRunEnd,
@@ -60,12 +61,15 @@ if (daily.date !== todayStr) daily = freshDaily(todayStr);
 const dailyTasks = rollDaily(todayStr);
 let banked = false;
 
-// Shields come ONLY from the SHIELD booster the player activates by hand
-// (owner): no passive/level shields that would auto-arm every run.
-const simOpts = () => ({
-  jumpPower: jumpPowerAt(level),
-  jumpCooldownTicks: jumpCooldownAt(level),
-});
+const simOpts = () => {
+  const p = perksAt(level);
+  return {
+    jumpPower: jumpPowerAt(level),
+    jumpCooldownTicks: jumpCooldownAt(level),
+    jumpMaxCharges: p.jumpCharges,
+    shields: p.shields, // free shields are a LEVEL perk (L5, L13)
+  };
+};
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 // Every run is a NEW random tower (owner: generative all the way). The seed
@@ -112,7 +116,7 @@ function onFinish(): void {
   if (banked) return;
   banked = true;
   bank += sim.score;
-  trackRunEnd(daily, sim.score);
+  trackRunEnd(daily, sim.score, sim.maxCombo);
   save("tf.daily", daily);
   lastNewBest = sim.score > best.score || sim.depth > best.depth;
   best = { score: Math.max(best.score, sim.score), depth: Math.max(best.depth, sim.depth) };
@@ -137,9 +141,12 @@ function showResultsNow(): void {
         return bank;
       },
       inventory,
+      // Boosters unlock with levels, cheapest first (owner).
+      unlockLevel: (id) => CONFIG.levelPerks.find((r) => r.booster === id)?.level ?? 1,
+      unlocked: (id) => perksAt(level).boosters.includes(id),
       buy(id) {
         const price = CONFIG.boosters[id].price;
-        if (bank < price) return;
+        if (bank < price || !perksAt(level).boosters.includes(id)) return;
         bank -= price;
         inventory[id] = (inventory[id] ?? 0) + 1;
         save("tf.bank", bank);
@@ -151,7 +158,9 @@ function showResultsNow(): void {
       cost: () => levelCost(level),
       jumpPower: () => jumpPowerAt(level),
       jumpCdS: () => jumpCooldownAt(level) * CONFIG.dt,
-      shields: () => 0, // levels no longer grant passive shields (owner)
+      shields: () => perksAt(level).shields,
+      jumpCharges: () => perksAt(level).jumpCharges,
+      nextText: () => nextPerkText(level),
       buy: () => {
         const cost = levelCost(level);
         if (bank < cost) return false;
@@ -163,10 +172,10 @@ function showResultsNow(): void {
       },
     },
     skins: {
-      unlocked: () => skinsAt(level),
+      unlocked: () => perksAt(level).skins,
       current: () => skin,
       select: (id) => {
-        if (!skinsAt(level).includes(id)) return;
+        if (!perksAt(level).skins.includes(id)) return;
         skin = id;
         save("tf.skin", skin);
         renderer.setSkin(skin);
@@ -275,7 +284,11 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   renderer.setShield(sim.shields > 0);
   renderer.frame(frameMs, lastTilt);
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth, sim.shields);
-  ui.setJump(sim.jumpCd <= 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks);
+  ui.setJump(
+    sim.jumpCharges > 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks,
+    sim.jumpCharges,
+    sim.jumpMaxCharges,
+  );
   ui.setBoosterBar(inventory, sim.armed, sim.runOn);
   (window as unknown as { __DSH_READY: boolean }).__DSH_READY = true;
 });
