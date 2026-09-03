@@ -114,6 +114,26 @@ export function activateBooster(s: SimState, id: BoosterId): void {
 }
 
 // JUMP (owner design): Space / button; leveling raises power, cuts cooldown.
+// A drag gives the POINT the player wants the ball at, but the sim only takes
+// a tilt, so this PD controller converts one into the other. Damping is the
+// whole game here: the closed loop is a spring with
+//   zeta = sqrt(g0 * kTilt * targetGainDist) / (2 * targetGainVel)
+// and below about 0.5 the ball sails past the finger and swings back instead
+// of arriving — it reads as the ball not obeying you. See the tuning test.
+export function driveTilt(
+  ball: { x: number; z: number; vx: number; vz: number },
+  target: { x: number; z: number },
+  kb: { x: number; z: number },
+): { x: number; z: number } {
+  const clamp = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
+  const cx = (target.x - ball.x) / CONFIG.targetGainDist - ball.vx / CONFIG.targetGainVel;
+  const cz = (target.z - ball.z) / CONFIG.targetGainDist - ball.vz / CONFIG.targetGainVel;
+  return {
+    x: Math.round(clamp(kb.x + cx) * 1000) / 1000,
+    z: Math.round(clamp(kb.z + cz) * 1000) / 1000,
+  };
+}
+
 export function jump(s: SimState): boolean {
   if (s.finished || s.jumpCharges <= 0) return false;
   s.ball.vy = -s.jumpPower;

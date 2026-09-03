@@ -5,7 +5,7 @@ import { CONFIG } from "../src/config";
 import { buildTier } from "../src/levelgen";
 import { BIOME_TIER_SPAN, biomeNameAt, paletteAt } from "../src/biomes";
 import { levelCost, nextPerkText, perksAt, rollDaily, skinsAt } from "../src/meta";
-import { activateBooster, createSim, jump, step } from "../src/sim";
+import { activateBooster, createSim, driveTilt, jump, step } from "../src/sim";
 
 describe("boosters", () => {
   it("every booster has a price and a mode", () => {
@@ -81,6 +81,30 @@ describe("mines", () => {
       // the assertion below keeps the test honest instead of vacuous.
       expect(doomed.depth).toBeGreaterThan(6);
     }
+  });
+});
+
+describe("steering", () => {
+  it("the drive spring is damped enough to arrive instead of orbiting", () => {
+    // Closed loop for the lateral axis: acceleration is g0*kTilt at full tilt,
+    // the P gain is 1/targetGainDist and the D gain is 1/targetGainVel, so
+    //   zeta = sqrt(g0*kTilt*targetGainDist) / (2*targetGainVel).
+    // The shipped 420/2600 gave 0.17 — 52% overshoot, still swinging after six
+    // seconds. Under ~0.55 the ball visibly circles the finger; over ~1.1 it
+    // stops feeling responsive.
+    const zeta =
+      Math.sqrt(CONFIG.g0 * CONFIG.kTilt * CONFIG.targetGainDist) / (2 * CONFIG.targetGainVel);
+    expect(zeta).toBeGreaterThan(0.55);
+    expect(zeta).toBeLessThan(1.1);
+  });
+
+  it("brakes while closing fast on the target, and pulls toward a still one", () => {
+    const still = { x: 0, z: 0, vx: 0, vz: 0 };
+    const none = { x: 0, z: 0 };
+    expect(driveTilt(still, { x: 200, z: 0 }, none).x).toBeGreaterThan(0);
+    // Same target, but already racing at it: the controller must be braking.
+    const racing = { x: 0, z: 0, vx: 900, vz: 0 };
+    expect(driveTilt(racing, { x: 200, z: 0 }, none).x).toBeLessThan(0);
   });
 });
 

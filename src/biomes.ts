@@ -21,7 +21,7 @@ export const BIOMES: Biome[] = [
     glass: [0.35, 0.8, 1.0],
     stone: [0.55, 0.44, 0.32],
     fogNear: 1.05,
-    ambient: 1.05,
+    ambient: 0.95,
   },
   {
     name: "VERDANT",
@@ -30,7 +30,7 @@ export const BIOMES: Biome[] = [
     glass: [0.4, 1.0, 0.65],
     stone: [0.52, 0.44, 0.3],
     fogNear: 1.0,
-    ambient: 1.1,
+    ambient: 0.95,
   },
   {
     name: "MAGMA",
@@ -39,7 +39,7 @@ export const BIOMES: Biome[] = [
     glass: [1.0, 0.62, 0.28],
     stone: [0.55, 0.34, 0.24],
     fogNear: 1.0,
-    ambient: 1.22, // was a cave — the owner could not see the blocks
+    ambient: 1.0, // was a cave; readability now comes from the sun, not from more light
   },
   {
     name: "NEON",
@@ -48,7 +48,7 @@ export const BIOMES: Biome[] = [
     glass: [0.86, 0.4, 1.0],
     stone: [0.44, 0.34, 0.54],
     fogNear: 1.0,
-    ambient: 1.05,
+    ambient: 0.9,
   },
   {
     name: "ABYSS",
@@ -57,7 +57,7 @@ export const BIOMES: Biome[] = [
     glass: [0.5, 0.9, 1.0],
     stone: [0.38, 0.38, 0.46],
     fogNear: 0.85,
-    ambient: 1.15,
+    ambient: 1.0,
   },
 ];
 

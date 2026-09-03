@@ -25,7 +25,11 @@ export const CONFIG = {
   // Physics (§3.3) — fixed timestep, semi-implicit Euler.
   dt: 1 / 120,
   g0: 3200,
-  kTilt: 0.6, // lateral gravity fraction at full tilt (linear — §2, no trig)
+  // Lateral authority at full tilt, as a fraction of gravity. At 1.0 the rule
+  // is legible — you can steer exactly as hard as you fall — and it is what
+  // lets the ball keep up with a finger sweeping across the shaft. It was 0.6,
+  // which left the ball trailing the target by six ball-radii (§2, no trig).
+  kTilt: 1.0,
   drag: 0.999,
   maxSpeed: 2600,
   wallRestitution: 0.6,
@@ -154,8 +158,12 @@ export const CONFIG = {
   // ball after it by synthesizing the same tilt input the sim always eats —
   // the sim itself is unchanged. Keyboard keeps direct tilt.
   targetControl: true,
-  targetGainDist: 420, // err units per full tilt (smaller = snappier chase)
-  targetGainVel: 2600, // velocity damping (bigger = less braking)
+  // These two set the spring the ball rides toward the drag target. The pair
+  // was 420/2600, a damping ratio of 0.17: 52% overshoot and still swinging
+  // after six seconds, which is why steering felt disobedient rather than
+  // merely slow. 220/620 puts it at 0.68 — arrives, barely overshoots, settles.
+  targetGainDist: 220, // err units per full tilt (smaller = snappier chase)
+  targetGainVel: 620, // velocity damping (SMALLER = more braking; the D gain)
   // RELATIVE pointer drag (owner: a finger glued to the disc covers the
   // action on phones): the drag MOVES the target from where the ball was at
   // touch-start, amplified — the finger can rest anywhere on screen.

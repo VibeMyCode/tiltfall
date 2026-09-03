@@ -15,7 +15,7 @@ import {
   trackRunEnd,
   type DailyProgress,
 } from "./meta";
-import { activateBooster, createSim, jump, predictPath, step, type SimEvent, type SimState } from "./sim";
+import { activateBooster, createSim, driveTilt, jump, predictPath, step, type SimEvent, type SimState } from "./sim";
 import { SFX, initAudio, isMuted, toggleMute } from "./sfx";
 import { attachInput, isTouch } from "./input";
 import { createRenderer } from "./render";
@@ -301,18 +301,10 @@ let lastLandY = CONFIG.firstTierTopY + CONFIG.blockH;
 let driveTarget: { x: number; z: number } | null = null;
 let dragAnchor: { x: number; z: number } | null = null;
 
-const clampT = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
 const clampShaft = (v: number, max: number) => Math.min(max - CONFIG.ballRadius, Math.max(CONFIG.ballRadius, v));
 
 function controlTilt(kb: { x: number; z: number }): { x: number; z: number } {
-  if (!driveTarget) return kb;
-  const b = sim.ball;
-  const cx = (driveTarget.x - b.x) / CONFIG.targetGainDist - b.vx / CONFIG.targetGainVel;
-  const cz = (driveTarget.z - b.z) / CONFIG.targetGainDist - b.vz / CONFIG.targetGainVel;
-  return {
-    x: Math.round(clampT(kb.x + cx) * 1000) / 1000,
-    z: Math.round(clampT(kb.z + cz) * 1000) / 1000,
-  };
+  return driveTarget ? driveTilt(sim.ball, driveTarget, kb) : kb;
 }
 
 renderer.scene.onBeforeRenderObservable.add(() => {

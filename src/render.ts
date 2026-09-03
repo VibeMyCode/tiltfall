@@ -62,17 +62,35 @@ export interface Renderer {
   screenToShaft: (clientX: number, clientY: number, planeY: number) => { x: number; z: number } | null;
 }
 
+// Emissive is light a surface makes regardless of where the sun is, so it
+// erases the shading that tells one cube face from another — and the glow
+// layer blurs every emissive pixel. At 0.25 on walls, glass AND stone the
+// entire scene was a glow source, which is what read as a permanent haze.
+// Kept small: enough to lift the dark layers, not enough to flatten them.
+const EMIT_WALL = 0.07;
+const EMIT_GLASS = 0.1; // glass may look lit — it is the thing you smash
+const EMIT_STONE = 0.05;
+
+const HEMI_BASE = 0.45;
+const SUN_BASE = 1.0;
+
 export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): Renderer {
   const C = CONFIG;
   const engine = new Engine(canvas, true);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.05, 0.06, 0.1, 1);
 
+  // A hemispheric light hits every face of a cube almost equally, so when it
+  // outweighs the sun the tower flattens into silhouettes and the only way to
+  // get blocks back is to add light — which is how the biomes ended up above
+  // 1.0 ambient. Keeping the sun dominant buys that readability from CONTRAST
+  // instead, at less total light. Both bases are named because the per-frame
+  // biome update below rescales them and the two must not drift apart.
   const hemi = new HemisphericLight("hemi", new Vector3(0.2, 1, 0.1), scene);
-  hemi.intensity = 0.9;
+  hemi.intensity = HEMI_BASE;
   hemi.groundColor = new Color3(0.15, 0.15, 0.2);
   const sun = new DirectionalLight("sun", new Vector3(-0.35, -1, -0.25), scene);
-  sun.intensity = 0.7;
+  sun.intensity = SUN_BASE;
 
   scene.fogMode = Scene.FOGMODE_LINEAR;
   scene.fogColor = new Color3(0.05, 0.06, 0.1);
@@ -84,10 +102,13 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   scene.activeCamera = camera;
 
   const glow = new GlowLayer("glow", scene);
-  glow.intensity = 0.55; // screen-space glow halos leak over occluders — keep modest
+  glow.intensity = 0.45; // screen-space glow halos leak over occluders — keep modest
   const pipeline = new DefaultRenderingPipeline("pp", false, scene, [camera]);
+  // Bloom sits on top of the glow layer, so the two stack. Threshold keeps it
+  // to genuine highlights instead of veiling the whole frame.
   pipeline.bloomEnabled = true;
-  pipeline.bloomWeight = 0.35;
+  pipeline.bloomThreshold = 0.85;
+  pipeline.bloomWeight = 0.15;
   pipeline.fxaaEnabled = true;
 
   const tower = new TransformNode("tower", scene);
@@ -561,14 +582,14 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       scene.clearColor.set(pal.sky[0], pal.sky[1], pal.sky[2], 1);
       scene.fogColor.set(pal.sky[0], pal.sky[1], pal.sky[2]);
       wallMat.diffuseColor.set(pal.wall[0], pal.wall[1], pal.wall[2]);
-      wallMat.emissiveColor.set(pal.wall[0] * 0.25, pal.wall[1] * 0.25, pal.wall[2] * 0.25);
+      wallMat.emissiveColor.set(pal.wall[0] * EMIT_WALL, pal.wall[1] * EMIT_WALL, pal.wall[2] * EMIT_WALL);
       MATS.glass.diffuseColor.set(pal.glass[0], pal.glass[1], pal.glass[2]);
-      MATS.glass.emissiveColor.set(pal.glass[0] * 0.25, pal.glass[1] * 0.25, pal.glass[2] * 0.25);
+      MATS.glass.emissiveColor.set(pal.glass[0] * EMIT_GLASS, pal.glass[1] * EMIT_GLASS, pal.glass[2] * EMIT_GLASS);
       MATS.stone.diffuseColor.set(pal.stone[0], pal.stone[1], pal.stone[2]);
       // A little self-lit stone keeps it visible in the dark layers.
-      MATS.stone.emissiveColor.set(pal.stone[0] * 0.16, pal.stone[1] * 0.16, pal.stone[2] * 0.16);
-      hemi.intensity = 0.9 * pal.ambient;
-      sun.intensity = 0.7 * pal.ambient;
+      MATS.stone.emissiveColor.set(pal.stone[0] * EMIT_STONE, pal.stone[1] * EMIT_STONE, pal.stone[2] * EMIT_STONE);
+      hemi.intensity = HEMI_BASE * pal.ambient;
+      sun.intensity = SUN_BASE * pal.ambient;
       const palFog = pal.fogNear;
 
       const maxRad = (C.maxVisualTiltDeg * Math.PI) / 180;
