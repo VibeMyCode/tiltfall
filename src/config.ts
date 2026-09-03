@@ -57,15 +57,20 @@ export const CONFIG = {
 
   // BOOSTERS (owner design): bought from the BANK after a run, activated on
   // demand. Impact boosters are ONE-SHOT (armed until the next matching hit);
-  // x2/heavy/agility run to the end of the run. Prices tuned so a typical run
-  // affords 2-3 purchases.
+  // x2/heavy/agility run to the end of the run.
+  //
+  // Prices are set against the whole SET, not one item: at 1250 total a single
+  // average run bought all six, so there was never a choice to make and the
+  // shop was decoration. ~3500 puts a full loadout at about three runs, which
+  // makes "which one this time?" a real question and gives boosters something
+  // to trade against — every point spent here is a point not spent on a level.
   boosters: {
-    quake: { price: 320, blastCells: 3.4 }, // one-shot: huge blast + slow-mo
-    chain: { price: 260, blastMul: 2.2 }, // one-shot: mega-chain + slow-mo
-    x2: { price: 220, scoreMul: 2 }, // run-long
-    heavy: { price: 180, gravityMul: 1.12 }, // run-long: lead ball, stone = glass
-    shield: { price: 150 }, // instant: +1 mine shield this run
-    agility: { price: 120, tiltMul: 1.8 }, // run-long: razor steering + comet tail
+    quake: { price: 900, blastCells: 3.4 }, // one-shot: huge blast + slow-mo
+    chain: { price: 720, blastMul: 2.2 }, // one-shot: mega-chain + slow-mo
+    x2: { price: 620, scoreMul: 2 }, // run-long
+    heavy: { price: 500, gravityMul: 1.12 }, // run-long: lead ball, stone = glass
+    shield: { price: 420 }, // instant: +1 mine shield this run
+    agility: { price: 340, tiltMul: 1.8 }, // run-long: razor steering + comet tail
   },
   slowMoScale: 0.35, // playback speed for quake/chain showcase cascades
 
@@ -75,8 +80,14 @@ export const CONFIG = {
   // levels buy skins, boosters, shields and a second charge instead.
   jumpBasePower: 1000,
   jumpHoverMargin: 1.6, // cooldown ÷ fall-back time; at 1.0 the ball breaks even
-  levelBaseCost: 260,
-  levelCostGrowth: 1.7,
+  // Levels are bought with the same bank as boosters, so these two curves have
+  // to be read together. Growth was 1.7, which is fine for the first handful
+  // and then a wall: the perk table ends at 15, and 1.7 put level 15 roughly
+  // 870 runs away, so most of the table was content nobody would ever see.
+  // 1.42 keeps the early levels quick and brings 15 to ~130 runs — far, but a
+  // destination rather than an asymptote.
+  levelBaseCost: 300,
+  levelCostGrowth: 1.42,
 
   // LEVEL PERK TABLE (owner): every level unlocks something concrete, and
   // boosters appear cheapest-first so the shop grows with the player.
