@@ -323,7 +323,7 @@ function showResultsNow(): void {
     // no longer Telegram-only.
     share: {
       telegram: inTelegram() ? () => shareTelegram(sim.score, sim.depth, CONFIG.botUrl) : null,
-      x: () => shareX(sim.score, sim.depth, CONFIG.webUrl),
+      x: () => shareX(sim.score, sim.depth, CONFIG.botUrl, CONFIG.webUrl),
     },
     shop: {
       get bank() {

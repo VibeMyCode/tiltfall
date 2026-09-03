@@ -99,16 +99,20 @@ export const CONFIG = {
   // levels buy skins, boosters, shields and a second charge instead.
   jumpBasePower: 1000,
   jumpHoverMargin: 1.6, // cooldown ÷ fall-back time; at 1.0 the ball breaks even
-  // Levels are bought with the same bank as boosters, so these two curves have
-  // to be read together. Measured against a real run of ~600 points:
-  //   level 2 costs 3 runs — you have played the game before it offers you
-  //   anything, which 300 (half a run) plainly did not;
-  //   level 15 lands near 200 runs, far enough to be a destination and close
-  //   enough to be one.
-  // The full booster set is 3500, so it stays DEARER than a level: progression
-  // is the main sink and boosters are the occasional choice, not the default.
-  levelBaseCost: 1800,
-  levelCostGrowth: 1.22,
+  // cost(L) = levelBaseCost * levelCostGrowth^(L-2); the perk table ends at 15.
+  //
+  // Read these against a MEASURED run, not a guess. An earlier curve was built
+  // on ~600 points per run, which was the figure before glass became punchable;
+  // afterwards the same player was reaching depth 83 and 22,000 in a run, and
+  // the whole table fell in under an hour. Growth stretches the tail, the base
+  // moves the opening — and the opening is meant to be quick.
+  //
+  // The other half of the balance is the booster set (3500 for all six). While
+  // that stays dearer than a level, progression is the main sink and boosters
+  // are an occasional choice; once levels outrun it by much, boosters become
+  // something you buy every run without thinking, and the choice disappears.
+  levelBaseCost: 2000,
+  levelCostGrowth: 1.25,
 
   // LEVEL PERK TABLE (owner): every level unlocks something concrete, and
   // boosters appear cheapest-first so the shop grows with the player.

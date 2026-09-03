@@ -131,13 +131,19 @@ export function shareTelegram(score: number, depth: number, appUrl: string): voi
 }
 
 // Share to X. The intent opens the composer already filled in — the reader
-// only has to press Post — and X builds the picture from the page's card, so
-// the web URL is shared rather than the t.me one. Inside Telegram the link has
-// to be handed to openLink, or it would try to open inside the Mini App.
-export function shareX(score: number, depth: number, webUrl: string): void {
+// only has to press Post.
+//
+// The Telegram link goes in `url` because that is the one X turns into the
+// preview card, and Telegram is the channel that matters: a tap there lands in
+// the Mini App with an account, a leaderboard and saved progress. The browser
+// link rides along in the text as the fallback for readers without Telegram.
+// Inside Telegram the intent has to be handed to openLink, or it would try to
+// open inside the Mini App itself.
+export function shareX(score: number, depth: number, appUrl: string, webUrl: string): void {
+  const text = `${brag(score, depth)}\n\nIn a browser: ${webUrl}`;
   const url =
-    `https://x.com/intent/post?text=${encodeURIComponent(brag(score, depth))}` +
-    `&url=${encodeURIComponent(webUrl)}`;
+    `https://x.com/intent/post?text=${encodeURIComponent(text)}` +
+    `&url=${encodeURIComponent(appUrl)}`;
   const app = tg();
   if (inTelegram() && app?.openLink) app.openLink(url);
   else window.open(url, "_blank", "noopener");

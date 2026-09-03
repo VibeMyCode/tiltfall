@@ -163,6 +163,73 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     makeMaterial("mDeath3", [1, 1, 1], 0.8),
   ];
 
+  // Top-face marks. A bomb is the thing worth aiming at and a bumper is a
+  // launcher, but both read as "a coloured block" until something on the face
+  // says otherwise. Drawn once into a shared material rather than per block.
+  function markMaterial(name: string, draw: (c: CanvasRenderingContext2D, s: number) => void): StandardMaterial {
+    const S = 128;
+    const tex = new DynamicTexture(name, { width: S, height: S }, scene, false);
+    const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+    ctx.clearRect(0, 0, S, S);
+    draw(ctx, S);
+    tex.update();
+    tex.hasAlpha = true;
+    const m = new StandardMaterial(`${name}Mat`, scene);
+    m.diffuseTexture = tex;
+    m.opacityTexture = tex;
+    m.emissiveColor = new Color3(1, 1, 1);
+    m.specularColor = new Color3(0, 0, 0);
+    // Unlit: the mark must stay legible on a face the sun has turned away from.
+    m.disableLighting = true;
+    m.backFaceCulling = false;
+    return m;
+  }
+
+  const MARK_MATS: Partial<Record<BlockType, StandardMaterial>> = {
+    // A target: what you want to hit.
+    bomb: markMaterial("markBomb", (c, S) => {
+      const r = S / 2;
+      c.strokeStyle = "rgba(12,10,6,0.88)";
+      c.lineCap = "round";
+      c.lineWidth = S * 0.085;
+      c.beginPath();
+      c.arc(r, r, S * 0.3, 0, Math.PI * 2);
+      c.stroke();
+      c.beginPath();
+      c.arc(r, r, S * 0.1, 0, Math.PI * 2);
+      c.fillStyle = "rgba(12,10,6,0.88)";
+      c.fill();
+      for (const [dx, dy] of [
+        [0, -1],
+        [0, 1],
+        [-1, 0],
+        [1, 0],
+      ]) {
+        c.beginPath();
+        c.moveTo(r + dx * S * 0.22, r + dy * S * 0.22);
+        c.lineTo(r + dx * S * 0.45, r + dy * S * 0.45);
+        c.stroke();
+      }
+    }),
+    // A ring with an upward chevron: it throws you back up.
+    bumper: markMaterial("markBumper", (c, S) => {
+      const r = S / 2;
+      c.strokeStyle = "rgba(8,20,12,0.8)";
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      c.lineWidth = S * 0.08;
+      c.beginPath();
+      c.arc(r, r, S * 0.33, 0, Math.PI * 2);
+      c.stroke();
+      c.lineWidth = S * 0.1;
+      c.beginPath();
+      c.moveTo(r - S * 0.16, r + S * 0.1);
+      c.lineTo(r, r - S * 0.11);
+      c.lineTo(r + S * 0.16, r + S * 0.1);
+      c.stroke();
+    }),
+  };
+
   const blockInfo = new Map<number, BlockDef>();
   const blockMeshes = new Map<number, Mesh>();
 
@@ -185,6 +252,18 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     }
     mesh.parent = tower;
     blockMeshes.set(b.id, mesh);
+    const mark = MARK_MATS[b.type];
+    if (mark) {
+      // Fixed size, so it stays an icon on a wide block instead of stretching
+      // into wallpaper.
+      const size = Math.min(Math.min(b.hx, b.hz) * 1.5, 96);
+      const face = MeshBuilder.CreatePlane(`mk${b.id}`, { size }, scene);
+      face.material = mark;
+      face.parent = mesh;
+      face.rotation.x = -Math.PI / 2; // lie flat on the top face
+      face.position = new Vector3(0, b.hy - 1, 0);
+      face.isPickable = false;
+    }
     if (b.type === "spike") {
       for (const [ox, oz] of [
         [-22, -22],
