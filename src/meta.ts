@@ -1,8 +1,8 @@
 // Player progression + daily tasks — pure functions over plain data.
 // Dates come in as strings (injected by main); no Date here.
-import { CONFIG } from "./config";
-import { stream, dateSeed } from "./rng";
-import type { SimEvent, SimState } from "./sim";
+import { CONFIG } from "./config.js";
+import { stream, dateSeed } from "./rng.js";
+import type { SimEvent, SimState } from "./sim.js";
 
 // --- Levels ----------------------------------------------------------------
 export const levelCost = (level: number): number =>

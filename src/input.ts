@@ -1,6 +1,6 @@
 // Pointer + keyboard → per-tick tilt sample (§3.1). One code path for touch
 // and mouse via pointer events; keyboard eases toward ±1 so both feel alike.
-import { CONFIG } from "./config";
+import { CONFIG } from "./config.js";
 
 const clamp = (v: number) => (v < -1 ? -1 : v > 1 ? 1 : v);
 

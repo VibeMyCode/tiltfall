@@ -1,7 +1,7 @@
 // Boosters (owner design v2): bought from the BANK, activated on demand.
 // "armed" fire once on the next smash; "run" last until game over;
 // "instant" apply immediately (shield). Pure module.
-import { CONFIG } from "./config";
+import { CONFIG } from "./config.js";
 
 export type BoosterId = "quake" | "chain" | "x2" | "heavy" | "shield" | "agility";
 

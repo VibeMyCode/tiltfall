@@ -2,8 +2,8 @@
 // demand — every run streams a fresh tower from a random seed (owner:
 // generative all the way). Difficulty ramps with depth; mines appear after
 // the grace tiers. Pure module: no Babylon, no wall-clock.
-import { CONFIG } from "./config";
-import { stream } from "./rng";
+import { CONFIG } from "./config.js";
+import { stream } from "./rng.js";
 
 export type BlockType = "glass" | "stone" | "bomb" | "bumper" | "spike" | "mine";
 

@@ -2,9 +2,9 @@
 // no Date, no transcendentals. ENDLESS tower streamed from the run seed;
 // the run ends only on a MINE (owner design). Same seed + same input log +
 // same booster/jump activations ⇒ same run.
-import { CONFIG, jumpCooldownTicks } from "./config";
-import { BOOSTER_MODE, type BoosterId } from "./boosters";
-import { buildTier, type BlockDef } from "./levelgen";
+import { CONFIG, jumpCooldownTicks } from "./config.js";
+import { BOOSTER_MODE, type BoosterId } from "./boosters.js";
+import { buildTier, type BlockDef } from "./levelgen.js";
 
 export interface SimBlock extends BlockDef {
   broken: boolean;

@@ -2,8 +2,8 @@
 // ends on a mine. Bank → levels (jump power/cooldown, skins, mine shields),
 // boosters, daily tasks (owner design M3+M4).
 import "./style.css";
-import { CONFIG, jumpCooldownTicks } from "./config";
-import { BOOSTER_ORDER, type BoosterId } from "./boosters";
+import { CONFIG, jumpCooldownTicks } from "./config.js";
+import { BOOSTER_ORDER, type BoosterId } from "./boosters.js";
 import {
   freshDaily,
   levelCost,
@@ -14,16 +14,16 @@ import {
   trackEvents,
   trackRunEnd,
   type DailyProgress,
-} from "./meta";
-import { activateBooster, createSim, driveTilt, jump, predictPath, step, type SimEvent, type SimState } from "./sim";
-import { SFX, initAudio, isMuted, toggleMute } from "./sfx";
-import { attachInput, isTouch } from "./input";
-import { createRenderer } from "./render";
-import { createUI } from "./ui";
-import { createRecorder, type RunRecorder } from "./replay";
-import { submitRun } from "./board";
-import { cloudLoad, cloudSave, haptic, initDataRaw, initTelegram, inTelegram, shareScore } from "./telegram";
-import { biomeNameAt } from "./biomes";
+} from "./meta.js";
+import { activateBooster, createSim, driveTilt, jump, predictPath, step, type SimEvent, type SimState } from "./sim.js";
+import { SFX, initAudio, isMuted, toggleMute } from "./sfx.js";
+import { attachInput, isTouch } from "./input.js";
+import { createRenderer } from "./render.js";
+import { createUI } from "./ui.js";
+import { createRecorder, type RunRecorder } from "./replay.js";
+import { resetBoard, submitRun } from "./board.js";
+import { cloudLoad, cloudSave, haptic, initDataRaw, initTelegram, inTelegram, shareScore } from "./telegram.js";
+import { biomeNameAt } from "./biomes.js";
 
 const DT_MS = 1000 * CONFIG.dt;
 const MAX_FRAME_MS = 100;
@@ -192,7 +192,7 @@ let lastBiome = "";
 // Wipe all saved progress (bank, boosters, level, skins, best, daily) and
 // start clean. CloudStorage mirrors these keys, so it is blanked too —
 // otherwise the next device sync would restore what was just erased.
-function wipeProgress(): void {
+async function wipeProgress(): Promise<void> {
   for (const k of ["tf.bank", "tf.inv", "tf.best", "tf.level", "tf.skin", "tf.daily"]) {
     try {
       localStorage.removeItem(k);
@@ -201,12 +201,16 @@ function wipeProgress(): void {
     }
     cloudSave(k, "");
   }
+  // Starting over means starting over on the board too — awaited, because the
+  // reload below would otherwise cancel the request in flight.
+  const initData = initDataRaw();
+  if (initData) await resetBoard(initData);
   location.reload();
 }
 
 const ui = createUI({
   onReplay: newRun,
-  onReset: wipeProgress,
+  onReset: () => void wipeProgress(),
   invert: { get: () => input.invertY(), toggle: () => input.toggleInvertY() },
   onActivate: tryActivate,
   onJump: tryJump,
@@ -507,7 +511,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   },
   // Testing helper: run `__tf.reset()` in the console. Players get the same
   // thing from the RESET PROGRESS button on the results card.
-  reset: wipeProgress,
+  reset: () => void wipeProgress(),
 };
 
 renderer.engine.runRenderLoop(() => renderer.scene.render());

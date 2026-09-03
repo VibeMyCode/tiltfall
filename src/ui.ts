@@ -1,11 +1,11 @@
 // DOM HUD + jump button + booster bar + game-over overlay with level,
 // skins, shop and daily tasks (§2: plain HTML/CSS).
-import { CONFIG } from "./config";
-import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boosters";
-import { isTouch } from "./input";
-import { fetchBoard, type BoardRow, type SubmitResult } from "./board";
-import type { DailyTask } from "./meta";
-import { SKINS, drawSkin } from "./skins";
+import { CONFIG } from "./config.js";
+import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boosters.js";
+import { isTouch } from "./input.js";
+import { fetchBoard, type BoardRow, type SubmitResult } from "./board.js";
+import type { DailyTask } from "./meta.js";
+import { SKINS, drawSkin } from "./skins.js";
 
 export interface ShopModel {
   bank: number;

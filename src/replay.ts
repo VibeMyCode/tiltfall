@@ -5,9 +5,9 @@
 //
 // Nothing here touches the network or Babylon: the recorder runs in the game
 // loop, replayScore runs in the API function, and both are plain data + sim.
-import { BOOSTER_ORDER, type BoosterId } from "./boosters";
-import { CONFIG, jumpCooldownTicks } from "./config";
-import { activateBooster, createSim, jump, step, type SimOpts } from "./sim";
+import { BOOSTER_ORDER, type BoosterId } from "./boosters.js";
+import { CONFIG, jumpCooldownTicks } from "./config.js";
+import { activateBooster, createSim, jump, step, type SimOpts } from "./sim.js";
 
 // Ten minutes. The tilt track is attacker-controlled and drives a loop, so its
 // length has to be bounded before it is trusted with any work at all.

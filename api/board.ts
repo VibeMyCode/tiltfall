@@ -11,7 +11,10 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { replayScore, type RunProof } from "../src/replay";
+// Explicit .js: Vercel compiles this to ESM and Node does not guess extensions
+// for relative imports. vercel dev resolves it either way, which is how the
+// deployed function came to crash on import while local testing stayed green.
+import { replayScore, type RunProof } from "../src/replay.js";
 
 // Lazy: module bodies run at build time too, and Redis.fromEnv() throws when
 // the credentials are not there yet. Nothing here should need a database to be
@@ -156,6 +159,31 @@ interface SubmitBody {
 
 const num = (v: unknown, max: number) =>
   typeof v === "number" && isFinite(v) ? Math.min(max, Math.max(0, Math.floor(v))) : 0;
+
+// RESET PROGRESS in the game wipes the player locally; without this the board
+// would keep ranking a score they no longer have. Identity is checked the same
+// way as a submit, so one player can only erase themselves.
+export async function DELETE(request: Request): Promise<Response> {
+  let initData = "";
+  try {
+    initData = ((await request.json()) as { initData?: string }).initData ?? "";
+  } catch {
+    return json({ error: "bad json" }, { status: 400 });
+  }
+  const user = verifyInitData(initData);
+  if (!user) return json({ error: "unverified" }, { status: 401 });
+  const uid = String(user.id);
+  if (!(await rateLimit().limit(uid)).success) return json({ error: "slow down" }, { status: 429 });
+
+  const pipe = db().pipeline();
+  pipe.zrem(BEST, uid);
+  pipe.zrem(TOTAL, uid);
+  pipe.del(player(uid));
+  await pipe.exec();
+  // stat:runs is history — how much the game has been played does not become
+  // untrue because one player started over.
+  return json({ ok: true });
+}
 
 export async function POST(request: Request): Promise<Response> {
   let body: SubmitBody;

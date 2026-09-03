@@ -16,11 +16,11 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { CONFIG } from "./config";
-import type { BlockDef, BlockType } from "./levelgen";
-import type { SimEvent } from "./sim";
-import { SKINS, drawSkin } from "./skins";
-import { paletteAt } from "./biomes";
+import { CONFIG } from "./config.js";
+import type { BlockDef, BlockType } from "./levelgen.js";
+import type { SimEvent } from "./sim.js";
+import { SKINS, drawSkin } from "./skins.js";
+import { paletteAt } from "./biomes.js";
 
 interface Shard {
   mesh: Mesh;

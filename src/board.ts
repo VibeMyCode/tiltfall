@@ -4,7 +4,7 @@
 // Phase one posts the score alone. Only if the server says the run would rank
 // does phase two build and upload the proof — which is the whole point: the
 // proof is tens of kilobytes, and most runs never need one.
-import type { RunProof } from "./replay";
+import type { RunProof } from "./replay.js";
 
 const API = "/api/board";
 
@@ -76,4 +76,22 @@ export async function submitRun(report: RunReport, proof: () => RunProof): Promi
     total: Number(res.total ?? 0),
     rank: res.rank === null || res.rank === undefined ? null : Number(res.rank),
   };
+}
+
+// Called when the player erases their progress: without it the board would go
+// on ranking a score they no longer have. Bounded so a dead network cannot
+// hold the wipe hostage.
+export async function resetBoard(initData: string): Promise<void> {
+  try {
+    await Promise.race([
+      fetch(API, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ initData }),
+      }),
+      new Promise((r) => setTimeout(r, 2500)),
+    ]);
+  } catch {
+    // offline, or outside Telegram — the local wipe still goes ahead
+  }
 }
