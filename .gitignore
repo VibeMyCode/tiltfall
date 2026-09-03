@@ -6,3 +6,9 @@ babylon.md
 /dist
 /screenshots
 .DS_Store
+
+# Credentials pulled from Vercel — never in git
+.env
+.env.*
+!.env.example
+.vercel
