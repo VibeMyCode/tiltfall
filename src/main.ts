@@ -282,9 +282,6 @@ function showResultsNow(): void {
     level: {
       current: () => level,
       cost: () => levelCost(level),
-      jumpCdS: () => jumpCooldownTicks() * CONFIG.dt,
-      shields: () => perksAt(level).shields,
-      jumpCharges: () => perksAt(level).jumpCharges,
       nextText: () => nextPerkText(level),
       buy: () => {
         const cost = levelCost(level);
@@ -432,7 +429,6 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   }
   ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth, sim.shields);
   ui.setJump(
-    sim.jumpCharges > 0 ? 1 : 1 - sim.jumpCd / sim.jumpCooldownTicks,
     sim.jumpCharges,
     sim.jumpMaxCharges,
     sim.jumpCd * CONFIG.dt,

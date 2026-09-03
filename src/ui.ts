@@ -30,9 +30,6 @@ export interface ResultsModel {
   level: {
     current: () => number;
     cost: () => number;
-    jumpCdS: () => number;
-    shields: () => number;
-    jumpCharges: () => number;
     nextText: () => string;
     buy: () => boolean;
   };
@@ -47,7 +44,7 @@ export interface ResultsModel {
 
 export interface UI {
   setHud: (timeS: number, score: number, combo: number, depth: number, shields: number) => void;
-  setJump: (readyFrac: number, charges: number, maxCharges: number, cooldownS: number) => void;
+  setJump: (charges: number, maxCharges: number, cooldownS: number) => void;
   setBoosterBar: (
     inventory: Record<BoosterId, number>,
     armed: Partial<Record<BoosterId, boolean>>,
@@ -69,6 +66,15 @@ export interface UIHandlers {
   mute: { get: () => boolean; toggle: () => boolean };
   best: () => { score: number; depth: number };
 }
+
+// Same drawing language as the booster icons: 24-box, currentColor, so it
+// inherits the button's colour instead of being a coloured sticker.
+const BOARD_ICON =
+  '<svg class="ico" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<rect x="3.5" y="12.5" width="5" height="8" rx="1.3" fill="currentColor" opacity="0.55"/>' +
+  '<rect x="9.5" y="6.5" width="5" height="14" rx="1.3" fill="currentColor"/>' +
+  '<rect x="15.5" y="15" width="5" height="5.5" rx="1.3" fill="currentColor" opacity="0.55"/>' +
+  "</svg>";
 
 export function createUI(h: UIHandlers): UI {
   const hud = document.createElement("div");
@@ -106,7 +112,7 @@ export function createUI(h: UIHandlers): UI {
       <p class="tagline">Steer the falling ball. Smash everything. Dodge the mines.</p>
       <div class="title-best hidden" id="title-best"></div>
       <button id="title-play">PLAY</button>
-      <button id="title-board" class="title-board">🏆 LEADERBOARD</button>
+      <button id="title-board" class="title-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
       <div class="title-hint" id="title-hint"></div>
     </div>`;
   document.body.appendChild(title);
@@ -132,16 +138,9 @@ export function createUI(h: UIHandlers): UI {
   document.body.appendChild(bar);
   let barKey = "";
 
-  // JUMP button (owner design): thumb-reachable; Space on desktop.
-  const jumpBtn = document.createElement("button");
-  jumpBtn.className = "jump-btn";
-  jumpBtn.innerHTML = `<span class="jump-fill" id="jump-fill"></span><span class="jump-label">JUMP</span><span class="jump-charges hidden" id="jump-charges">1</span>`;
-  document.body.appendChild(jumpBtn);
-  jumpBtn.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    h.onJump();
-  });
+  // No jump button anywhere (owner): Space on desktop, double tap on touch.
+  // The HUD chip below is the only jump readout, and it already shows charges
+  // and the reload countdown.
   window.addEventListener("keydown", (e) => {
     if (e.code === "Space") {
       e.preventDefault();
@@ -161,7 +160,7 @@ export function createUI(h: UIHandlers): UI {
   results.innerHTML = `
     <div class="results-card">
       <div class="results-scroll">
-        <div class="new-best hidden" id="res-newbest">🏆 NEW BEST!</div>
+        <div class="new-best hidden" id="res-newbest">NEW BEST</div>
         <h2 id="res-title">GAME OVER</h2>
         <div class="hero-score" id="res-score">0</div>
         <div class="hero-sub">BEST <b id="res-best">0</b></div>
@@ -170,7 +169,7 @@ export function createUI(h: UIHandlers): UI {
           <span class="chip">▦ <b id="res-broken">0</b><i>blocks</i></span>
           <span class="chip">× <b id="res-combo">1</b><i>combo</i></span>
         </div>
-        <button class="board-open" id="res-board">🏆 LEADERBOARD</button>
+        <button class="board-open" id="res-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
         <div class="bank-line">BANK <b class="bank" id="shop-bank">0</b></div>
         <div class="level-box" id="level-box"></div>
         <div class="skin-row" id="skin-row"></div>
@@ -232,15 +231,12 @@ export function createUI(h: UIHandlers): UI {
     // Level panel — live values, never a stale snapshot.
     const lvl = m.level.current();
     const cost = m.level.cost();
-    const shields = m.level.shields();
-    const charges = m.level.jumpCharges();
     const lb = el("level-box");
     lb.innerHTML = `
       <div class="lvl-head">
         <span class="lvl-name">LEVEL <b>${lvl}</b></span>
-        <span class="lvl-stats"><i>reload</i><b>${m.level.jumpCdS().toFixed(1)}s</b>${charges > 1 ? `<i>charges</i><b>${charges}</b>` : ""}${shields ? `<i>shields</i><b>${shields}</b>` : ""}</span>
+        <span class="lvl-next"><span>NEXT</span> ${m.level.nextText()}</span>
       </div>
-      <div class="lvl-next"><span>NEXT</span> ${m.level.nextText()}</div>
       <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;
     lb.querySelector<HTMLButtonElement>("#lvl-buy")!.addEventListener("click", () => {
       if (m.level.buy()) renderPanels();
@@ -399,13 +395,7 @@ export function createUI(h: UIHandlers): UI {
       }
       lastCombo = combo;
     },
-    setJump(readyFrac, charges, maxCharges, cooldownS) {
-      el("jump-fill").style.setProperty("--f", String(readyFrac));
-      jumpBtn.classList.toggle("ready", charges > 0);
-      const badge = el("jump-charges");
-      badge.textContent = String(charges);
-      badge.classList.toggle("hidden", maxCharges <= 1);
-      // HUD chip: the jump state lives up top too (touch has no button).
+    setJump(charges, maxCharges, cooldownS) {
       const chip = el("hud-jump");
       const ready = charges > 0;
       chip.textContent = ready ? (maxCharges > 1 ? `⤒ ${charges}` : "⤒") : `⤒ ${cooldownS.toFixed(1)}s`;

@@ -5,6 +5,9 @@ body {
   height: 100%;
   overflow: hidden;
   background: #000;
+  /* Declared once, here. Per-component font-family is how the leaderboard
+     ended up rendering in the browser's default serif. */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 canvas#scene {
@@ -22,7 +25,6 @@ canvas#scene {
   justify-content: center;
   gap: 18px;
   pointer-events: none;
-  font-family: system-ui, sans-serif;
   z-index: 10;
 }
 .hud-item {
@@ -48,7 +50,6 @@ canvas#scene {
   justify-content: center;
   background: rgba(5, 6, 12, 0.6);
   z-index: 20;
-  font-family: system-ui, sans-serif;
 }
 .results.hidden { display: none; }
 .results-card {
@@ -98,7 +99,6 @@ canvas#scene {
   gap: 22px;
   background: rgba(5, 6, 12, 0.55);
   z-index: 15;
-  font-family: system-ui, sans-serif;
 }
 .draft.hidden { display: none; }
 .draft-timer { width: 46px; height: 46px; }
@@ -150,7 +150,6 @@ canvas#scene {
   justify-content: center;
   gap: 10px;
   z-index: 10;
-  font-family: system-ui, sans-serif;
 }
 .booster {
   position: relative;
@@ -229,33 +228,6 @@ canvas#scene {
 #hud-combo { min-width: 46px; text-align: center; }
 
 .hud-depth { color: #8fe3c0; min-width: 58px; text-align: center; }
-
-.jump-btn {
-  position: fixed;
-  right: max(18px, env(safe-area-inset-right));
-  bottom: max(26px, env(safe-area-inset-bottom));
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  border: 2px solid #7fd4ff;
-  background: rgba(12, 16, 32, 0.8);
-  color: #cfe6ff;
-  font-family: system-ui, sans-serif;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  z-index: 11;
-  overflow: hidden;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.jump-btn .jump-fill {
-  position: absolute;
-  inset: 0;
-  background: conic-gradient(rgba(127, 212, 255, 0.35) calc(var(--f, 0) * 360deg), transparent 0deg);
-}
-.jump-btn .jump-label { position: relative; }
-.jump-btn.ready { box-shadow: 0 0 22px rgba(127, 212, 255, 0.6); border-color: #b9ecff; }
-.jump-btn:active { transform: scale(0.93); }
 
 .level-box { margin-top: 12px; text-align: left; border-top: 1px solid #2c3766; padding-top: 10px; }
 .lvl-head { font-size: 13px; letter-spacing: 0.08em; color: #9fb4d8; display: flex; justify-content: space-between; align-items: center; }
@@ -372,15 +344,16 @@ canvas#scene {
   box-shadow: 0 -8px 20px rgba(5, 8, 18, 0.55);
 }
 .level-box { border-top: none; padding-top: 4px; }
-body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { display: none; }
+body.gameover .booster-bar, body.gameover .hud { display: none; }
 
 /* Level row: proper alignment, readable labels (owner) */
-.lvl-head { display: flex; justify-content: space-between; align-items: center; min-height: 30px; }
-.lvl-name { font-size: 13px; letter-spacing: 0.14em; color: #9fb4d8; }
+.lvl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; min-height: 26px; }
+.lvl-name { display: flex; align-items: baseline; gap: 6px; flex: none; font-size: 13px; letter-spacing: 0.14em; color: #9fb4d8; }
 .lvl-name b { color: #ffe9a8; font-size: 17px; margin-left: 4px; }
 .lvl-stats { display: flex; align-items: baseline; gap: 6px; }
-.lvl-stats i { font-style: normal; font-size: 10px; letter-spacing: 0.08em; color: #6f7ea3; text-transform: uppercase; }
-.lvl-stats b { font-size: 13px; color: #cfe0ff; font-variant-numeric: tabular-nums; margin-right: 6px; }
+.lvl-name i { font-style: normal; font-size: 10px; letter-spacing: 0.08em; color: #6f7ea3; text-transform: uppercase; }
+.lvl-name i { font-style: normal; font-size: 10px; letter-spacing: 0.08em; color: #6f7ea3; text-transform: uppercase; }
+.lvl-name b + i { margin-left: 8px; }
 
 /* Compact shop cards — descriptions moved to hover tooltips */
 .shop-item { min-height: 0; padding: 10px 6px 8px; gap: 4px; }
@@ -390,9 +363,12 @@ body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { displa
 .hud-item.hidden { display: none; }
 
 .lvl-next {
-  margin-top: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
   font-size: 11px;
-  line-height: 1.4;
   color: #8fa2c9;
 }
 .lvl-next span {
@@ -408,15 +384,6 @@ body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { displa
 }
 .shop-item.locked { opacity: 0.4; filter: grayscale(0.7); }
 .shop-lock { font-size: 10px; font-weight: 800; color: #8fa2c9; letter-spacing: 0.06em; }
-.jump-charges {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  font-size: 12px;
-  font-weight: 900;
-  color: #b9ecff;
-}
-.jump-charges.hidden { display: none; }
 
 /* Skin swatches render the real generated pattern */
 .skin { width: 38px; height: 38px; padding: 0; overflow: hidden; background: #0c1020; }
@@ -431,7 +398,6 @@ body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { displa
   align-items: center;
   justify-content: center;
   background: radial-gradient(circle at 50% 35%, rgba(28, 40, 82, 0.75), rgba(5, 7, 15, 0.95));
-  font-family: system-ui, sans-serif;
   transition: opacity 0.45s ease, transform 0.45s ease;
 }
 .title.gone { opacity: 0; transform: scale(1.06); pointer-events: none; }
@@ -465,7 +431,7 @@ body.gameover .jump-btn, body.gameover .booster-bar, body.gameover .hud { displa
 #title-play:active { transform: scale(0.96); }
 .title-hint { margin-top: 20px; font-size: 11.5px; color: #6f7ea3; letter-spacing: 0.04em; }
 .title-hint b { color: #9fb4d8; }
-body.titlescreen .hud, body.titlescreen .jump-btn, body.titlescreen .booster-bar { display: none; }
+body.titlescreen .hud, body.titlescreen .booster-bar { display: none; }
 
 /* ---- HUD polish + mobile layout (owner: misaligned, overlapping) ---- */
 .hud { gap: 8px; flex-wrap: wrap; padding: 0 8px; }
@@ -473,11 +439,6 @@ body.titlescreen .hud, body.titlescreen .jump-btn, body.titlescreen .booster-bar
 .hud-jump { color: #b9ecff; min-width: 54px; }
 .hud-jump.ready { color: #7fd4ff; }
 .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 54px); }
-
-@media (pointer: coarse) {
-  /* Touch: no jump button — double tap anywhere jumps (owner). */
-  .jump-btn { display: none; }
-}
 
 @media (max-width: 560px) {
   .hud { gap: 6px; top: calc(env(safe-area-inset-top, 6px) + 2px); }
@@ -542,7 +503,6 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
   left: 0;
   right: 0;
   text-align: center;
-  font-family: system-ui, sans-serif;
   font-size: clamp(22px, 6vw, 34px);
   font-weight: 900;
   letter-spacing: 0.34em;
@@ -611,7 +571,10 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
    the results card, because the inline version was below the fold. */
 .title-board,
 .board-open {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   width: 100%;
   margin-top: 10px;
   padding: 11px;
@@ -624,6 +587,8 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
   letter-spacing: 0.12em;
   cursor: pointer;
 }
+.title-board .ico,
+.board-open .ico { opacity: 0.85; }
 .title-board:hover,
 .board-open:hover { border-color: #4d7ab8; color: #d8ecff; }
 .board-open { margin: 12px 0 4px; }
