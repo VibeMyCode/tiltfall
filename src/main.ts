@@ -20,7 +20,9 @@ import { SFX, initAudio, isMuted, toggleMute } from "./sfx";
 import { attachInput, isTouch } from "./input";
 import { createRenderer } from "./render";
 import { createUI } from "./ui";
-import { cloudLoad, cloudSave, haptic, initTelegram, inTelegram, shareScore } from "./telegram";
+import { createRecorder, type RunRecorder } from "./replay";
+import { submitRun } from "./board";
+import { cloudLoad, cloudSave, haptic, initDataRaw, initTelegram, inTelegram, shareScore } from "./telegram";
 import { biomeNameAt } from "./biomes";
 
 const DT_MS = 1000 * CONFIG.dt;
@@ -80,6 +82,9 @@ const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 // Every run is a NEW random tower (owner: generative all the way). The seed
 // itself is drawn outside the sim — the sim stays deterministic per seed.
 let sim: SimState = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
+// Recorded alongside every run so a ranking score can be proven rather than
+// asserted. Costs one array push per tick and nothing at all if never sent.
+let recorder: RunRecorder = createRecorder(sim.seed, simOpts().shields, simOpts().jumpMaxCharges);
 const input = attachInput(canvas, () => tryJump());
 const renderer = createRenderer(canvas, sim.blocks);
 renderer.setSkin(skin);
@@ -116,6 +121,8 @@ if (inTelegram() && bank === 0 && level === 1) {
 const newRun = () => {
   clearTimeout(resultsTimer);
   sim = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
+  const o = simOpts();
+  recorder = createRecorder(sim.seed, o.shields, o.jumpMaxCharges);
   banked = false;
   lastBiome = biomeNameAt(0);
   renderer.setLayout(sim.blocks);
@@ -128,6 +135,7 @@ function tryActivate(id: BoosterId): void {
   if ((inventory[id] ?? 0) <= 0) return;
   inventory[id]--;
   save("tf.inv", inventory);
+  recorder.event(id);
   activateBooster(sim, id);
   SFX.booster();
   trackBoosterUse(daily);
@@ -135,6 +143,7 @@ function tryActivate(id: BoosterId): void {
 }
 
 function tryJump(): void {
+  recorder.event("jump"); // recorded even if refused — the replay refuses it too
   if (jump(sim)) {
     renderer.jumpFx(sim.ball);
     SFX.jump();
@@ -213,6 +222,19 @@ const ui = createUI({
 let resultsTimer = 0;
 let lastNewBest = false;
 
+// Fire-and-forget: the leaderboard must never be able to delay the death
+// scene or the results card. Outside Telegram there is no signed identity, so
+// there is nothing to submit and the board stays read-only.
+function reportRun(): void {
+  const initData = initDataRaw();
+  if (!initData || sim.score <= 0) return;
+  const snapshot = recorder; // newRun may replace it while the request is out
+  void submitRun(
+    { initData, score: sim.score, depth: sim.depth, level, skin },
+    () => snapshot.proof(),
+  ).then((r) => ui.setRank(r));
+}
+
 function onFinish(): void {
   if (banked) return;
   banked = true;
@@ -223,6 +245,7 @@ function onFinish(): void {
   best = { score: Math.max(best.score, sim.score), depth: Math.max(best.depth, sim.depth) };
   save("tf.bank", bank);
   save("tf.best", best);
+  reportRun();
   // The death scene plays first (ball shatters, slow beat) — the overlay
   // fades in after it, never over it (owner design).
   resultsTimer = window.setTimeout(showResultsNow, 1500);
@@ -357,6 +380,7 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   while (accumulator >= DT_MS) {
     const s = CONFIG.targetControl ? controlTilt(input.sample(nowMs, true)) : input.sample(nowMs);
     lastTilt = s;
+    recorder.tick(s.x, s.z);
     const events = step(sim, s.x, s.z);
     if (events.length) {
       renderer.applyEvents(events);

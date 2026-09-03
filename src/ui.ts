@@ -3,6 +3,7 @@
 import { CONFIG } from "./config";
 import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boosters";
 import { isTouch } from "./input";
+import { fetchBoard, type BoardRow, type SubmitResult } from "./board";
 import type { DailyTask } from "./meta";
 import { SKINS, drawSkin } from "./skins";
 
@@ -55,6 +56,7 @@ export interface UI {
   showBiome: (name: string) => void;
   showResults: (r: ResultsModel) => void;
   hideResults: () => void;
+  setRank: (r: SubmitResult | null) => void;
 }
 
 export interface UIHandlers {
@@ -175,6 +177,7 @@ export function createUI(h: UIHandlers): UI {
           <div class="shop-grid" id="shop-grid"></div>
         </div>
         <div class="section daily" id="daily-box"></div>
+        <div class="section" id="board-box"></div>
         <button id="res-reset" class="reset-link">RESET PROGRESS</button>
       </div>
       <div class="results-actions">
@@ -286,6 +289,56 @@ export function createUI(h: UIHandlers): UI {
     );
   }
 
+  // --- leaderboard ---------------------------------------------------------
+  let myRank: SubmitResult | null = null;
+
+  const skinDot = (id: string): string => {
+    const rgb = SKINS[id]?.rgb ?? [0.5, 0.6, 0.8];
+    const c = rgb.map((v) => Math.round(Math.min(1, v) * 255)).join(",");
+    return `<i class="bd-dot" style="background:rgb(${c})"></i>`;
+  };
+
+  const paintRank = (): void => {
+    const line = document.getElementById("bd-me");
+    if (!line) return;
+    line.classList.toggle("hidden", !myRank);
+    if (!myRank) return;
+    const place = myRank.rank ? `#${myRank.rank}` : "unranked";
+    line.innerHTML = `YOU <b>${place}</b> · best <b>${myRank.best}</b> · total <b>${myRank.total}</b>`;
+  };
+
+  // Names come from other people's Telegram profiles, so they are stripped
+  // before they ever reach innerHTML.
+  const safe = (t: string): string => t.replace(/[<>&"]/g, "").slice(0, 24);
+
+  const boardRow = (r: BoardRow, i: number): string =>
+    `<div class="bd-row"><span class="bd-rank">${i + 1}</span>${skinDot(r.skin)}` +
+    `<span class="bd-name">${safe(r.name)}</span>` +
+    `<span class="bd-lvl">L${r.level}</span><b class="bd-best">${r.best}</b>` +
+    `<span class="bd-total">${r.total}</span></div>`;
+
+  async function renderBoard(): Promise<void> {
+    const box = document.getElementById("board-box");
+    if (!box) return;
+    box.innerHTML = `<div class="section-head">LEADERBOARD</div><div class="bd-wait">loading…</div>`;
+    const b = await fetchBoard();
+    if (!box.isConnected) return;
+    if (!b) {
+      box.innerHTML = ""; // offline, or no board deployed — not worth an error
+      return;
+    }
+    box.innerHTML =
+      `<div class="section-head">LEADERBOARD <span class="bd-stat">${b.players} players · ${b.runs} runs</span></div>` +
+      `<div class="bd-me hidden" id="bd-me"></div>` +
+      (b.rows.length
+        ? `<div class="bd-row bd-head"><span class="bd-rank">#</span><i class="bd-dot"></i>` +
+          `<span class="bd-name">player</span><span class="bd-lvl">lvl</span>` +
+          `<b class="bd-best">best</b><span class="bd-total">total</span></div>` +
+          b.rows.map(boardRow).join("")
+        : `<div class="bd-wait">nobody has ranked yet — be first</div>`);
+    paintRank();
+  }
+
   return {
     setHud(timeS, score, combo, depth, shields) {
       el("hud-time").textContent = `${timeS.toFixed(1)}s`;
@@ -340,6 +393,10 @@ export function createUI(h: UIHandlers): UI {
       void biomeBanner.offsetWidth; // restart the animation
       biomeBanner.classList.add("show");
     },
+    setRank(sub) {
+      myRank = sub;
+      paintRank();
+    },
     showResults(r) {
       model = r;
       el("res-score").textContent = String(r.score);
@@ -350,6 +407,7 @@ export function createUI(h: UIHandlers): UI {
       el("res-newbest").classList.toggle("hidden", !r.newBest);
       shareBtn.classList.toggle("hidden", !r.share);
       renderPanels();
+      void renderBoard();
       document.body.classList.add("gameover"); // hides jump/booster bar
       results.classList.remove("hidden");
     },

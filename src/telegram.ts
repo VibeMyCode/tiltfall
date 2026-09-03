@@ -55,6 +55,11 @@ export function initTelegram(): void {
   document.body.classList.add("in-telegram");
 }
 
+// The signed blob the server checks to learn who is submitting. Only a real
+// Telegram client fills it, so outside Telegram there is nobody to identify
+// and the leaderboard simply stays read-only.
+export const initDataRaw = (): string | null => tg()?.initData || null;
+
 export function playerName(): string | null {
   const u = tg()?.initDataUnsafe?.user;
   return u ? (u.first_name ?? u.username ?? null) : null;

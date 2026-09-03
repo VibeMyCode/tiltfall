@@ -575,3 +575,43 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
   cursor: pointer;
 }
 .reset-link:hover { color: #c9d6f0; border-color: #56658c; }
+
+/* Leaderboard. Fixed columns so ranks and scores line up down the list — a
+   ragged right edge makes a table of numbers unreadable. */
+.bd-stat { float: right; color: #5d6c8d; letter-spacing: 0; font-size: 11px; }
+.bd-wait { color: #6d7ea3; font-size: 12px; padding: 6px 0; }
+.bd-me {
+  background: #1b2540;
+  border: 1px solid #2f3d61;
+  border-radius: 8px;
+  padding: 7px 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: #8fa2c9;
+}
+.bd-me b { color: #bfe6ff; }
+/* No generic .hidden in this sheet — every element scopes its own. */
+.bd-me.hidden { display: none; }
+.bd-row {
+  display: grid;
+  grid-template-columns: 26px 12px 1fr 34px 62px 62px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  font-size: 13px;
+  border-bottom: 1px solid #1c2540;
+}
+.bd-head {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #5d6c8d;
+  text-transform: uppercase;
+  border-bottom-color: #2a3554;
+}
+.bd-rank { color: #6d7ea3; text-align: right; font-variant-numeric: tabular-nums; }
+.bd-dot { width: 10px; height: 10px; border-radius: 50%; display: block; }
+.bd-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d7e3f7; }
+.bd-lvl { color: #8fa2c9; font-size: 11px; }
+.bd-best { text-align: right; color: #bfe6ff; font-variant-numeric: tabular-nums; }
+.bd-total { text-align: right; color: #6d7ea3; font-size: 11px; font-variant-numeric: tabular-nums; }
