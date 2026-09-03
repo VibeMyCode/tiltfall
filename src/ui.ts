@@ -2,6 +2,7 @@
 // skins, shop and daily tasks (§2: plain HTML/CSS).
 import { CONFIG } from "./config";
 import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boosters";
+import { isTouch } from "./input";
 import type { DailyTask } from "./meta";
 import { SKINS, drawSkin } from "./skins";
 
@@ -58,6 +59,7 @@ export interface UI {
 
 export interface UIHandlers {
   onReplay: () => void;
+  onReset: () => void; // wipe all progress and start over
   invert: { get: () => boolean; toggle: () => boolean };
   onActivate: (id: BoosterId) => void;
   onJump: () => void;
@@ -173,6 +175,7 @@ export function createUI(h: UIHandlers): UI {
           <div class="shop-grid" id="shop-grid"></div>
         </div>
         <div class="section daily" id="daily-box"></div>
+        <button id="res-reset" class="reset-link">RESET PROGRESS</button>
       </div>
       <div class="results-actions">
         <button id="res-share" class="hidden">SHARE</button>
@@ -181,6 +184,11 @@ export function createUI(h: UIHandlers): UI {
     </div>`;
   document.body.appendChild(results);
   results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", h.onReplay);
+  // Destructive and irreversible, so it asks first — and it is deliberately the
+  // last thing in the scroll, below the daily tasks.
+  results.querySelector<HTMLButtonElement>("#res-reset")!.addEventListener("click", () => {
+    if (confirm("Erase level, bank, boosters, skins and best score, and start over?")) h.onReset();
+  });
   const shareBtn = results.querySelector<HTMLButtonElement>("#res-share")!;
   shareBtn.addEventListener("click", () => model?.share?.());
 
@@ -321,7 +329,7 @@ export function createUI(h: UIHandlers): UI {
         const btn = document.createElement("button");
         btn.className = `booster${state ? " active" : ""}`;
         btn.style.setProperty("--accent", info.color);
-        btn.innerHTML = `<span class="b-icon">${info.svg}</span><span class="b-count">${state || "×" + owned}</span><span class="b-key">${i + 1}</span>`;
+        btn.innerHTML = `<span class="b-icon">${info.svg}</span><span class="b-count">${state || "×" + owned}</span>${isTouch() ? "" : `<span class="b-key">${i + 1}</span>`}`;
         btn.addEventListener("click", () => h.onActivate(id));
         bar.appendChild(btn);
       });

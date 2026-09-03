@@ -180,8 +180,24 @@ function playSfx(events: SimEvent[]): void {
 let started = false; // the sim waits behind the title screen
 let lastBiome = "";
 
+// Wipe all saved progress (bank, boosters, level, skins, best, daily) and
+// start clean. CloudStorage mirrors these keys, so it is blanked too —
+// otherwise the next device sync would restore what was just erased.
+function wipeProgress(): void {
+  for (const k of ["tf.bank", "tf.inv", "tf.best", "tf.level", "tf.skin", "tf.daily"]) {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      // storage unavailable — nothing to wipe
+    }
+    cloudSave(k, "");
+  }
+  location.reload();
+}
+
 const ui = createUI({
   onReplay: newRun,
+  onReset: wipeProgress,
   invert: { get: () => input.invertY(), toggle: () => input.toggleInvertY() },
   onActivate: tryActivate,
   onJump: tryJump,
@@ -453,18 +469,9 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   replay() {
     newRun();
   },
-  // Wipe all saved progress (bank, boosters, level, skins, best, daily) and
-  // start clean — testing helper: run `__tf.reset()` in the console.
-  reset() {
-    for (const k of ["tf.bank", "tf.inv", "tf.best", "tf.level", "tf.skin", "tf.daily"]) {
-      try {
-        localStorage.removeItem(k);
-      } catch {
-        // storage unavailable — nothing to wipe
-      }
-    }
-    location.reload();
-  },
+  // Testing helper: run `__tf.reset()` in the console. Players get the same
+  // thing from the RESET PROGRESS button on the results card.
+  reset: wipeProgress,
 };
 
 renderer.engine.runRenderLoop(() => renderer.scene.render());
