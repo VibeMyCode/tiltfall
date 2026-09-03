@@ -70,12 +70,12 @@ export const CONFIG = {
   // makes "which one this time?" a real question and gives boosters something
   // to trade against — every point spent here is a point not spent on a level.
   boosters: {
-    quake: { price: 900 }, // one-shot: clears the tier, shakes the screen
-    chain: { price: 720 }, // one-shot: clears the tier as a lightning chain
-    x2: { price: 620, scoreMul: 2 }, // run-long
+    quake: { price: 1000 }, // one-shot: clears the tier, shakes the screen
+    chain: { price: 1000 }, // one-shot: clears the tier as a lightning chain
+    x2: { price: 800, scoreMul: 2 }, // run-long
     heavy: { price: 500, gravityMul: 1.12 }, // run-long: lead ball, stone = glass
-    shield: { price: 420 }, // instant: +1 mine shield this run
-    agility: { price: 340, tiltMul: 1.8 }, // run-long: razor steering + comet tail
+    shield: { price: 450 }, // instant: +1 mine shield this run
+    agility: { price: 350, tiltMul: 1.8 }, // run-long: razor steering + comet tail
   },
   // SHOWCASE (chain + quake). Both now clear the whole tier: 1800 covers the
   // shaft corner to corner, and the ±400 vertical filter in queueBlast keeps it
