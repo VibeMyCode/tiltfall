@@ -21,6 +21,7 @@ import { attachInput, isTouch } from "./input.js";
 import { createRenderer } from "./render.js";
 import { createUI } from "./ui.js";
 import { createRecorder, type RunRecorder } from "./replay.js";
+import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
 import { resetBoard, submitRun } from "./board.js";
 import { cloudLoad, cloudSave, haptic, initDataRaw, initTelegram, inTelegram, shareScore } from "./telegram.js";
 import { biomeNameAt } from "./biomes.js";
@@ -37,6 +38,13 @@ function load<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
+// A monotonic counter stamped on every write. It is what makes the cloud
+// mirror usable as a sync rather than a one-time restore: a device compares its
+// own rev against the cloud's and adopts the newer state WHOLE. Merging field
+// by field would be worse than useless here — bank and inventory are spent, so
+// taking the max of each would mint currency out of every cross-device session.
+let rev = load<number>(REV_KEY, 0);
+
 function save(key: string, value: unknown): void {
   const json = JSON.stringify(value);
   try {
@@ -44,7 +52,35 @@ function save(key: string, value: unknown): void {
   } catch {
     // storage unavailable — session-only progress
   }
-  cloudSave(key, json); // Telegram: same progress on every device
+  cloudSave(key, json);
+  bumpRev();
+}
+
+// The local counter moves at once; the cloud write is coalesced, because a run
+// ending triggers several saves and each already writes its own key — bumping
+// the cloud rev per save would double the traffic for no gain.
+//
+// The ordering this produces is the safe one: values land first, the rev last.
+// If the app closes in between, the other device simply does not adopt yet and
+// nothing is lost. The reverse — a rev newer than the values it vouches for —
+// is what would let a half-written state be adopted as whole.
+let revFlush = 0;
+function bumpRev(): void {
+  rev++;
+  try {
+    localStorage.setItem(REV_KEY, String(rev));
+  } catch {
+    // storage unavailable — session-only progress
+  }
+  clearTimeout(revFlush);
+  revFlush = window.setTimeout(flushRev, 400);
+}
+
+// Used where the page is about to reload and the pending write would be lost
+// with it — the reset, which is exactly the bump that must not go missing.
+function flushRev(): void {
+  clearTimeout(revFlush);
+  cloudSave(REV_KEY, String(rev));
 }
 let bank = load<number>("tf.bank", 0);
 const rawInv = load<Record<string, number>>("tf.inv", {});
@@ -89,32 +125,27 @@ const input = attachInput(canvas, () => tryJump());
 const renderer = createRenderer(canvas, sim.blocks);
 renderer.setSkin(skin);
 
-// Telegram CloudStorage restore: if this device has no local progress but the
-// account does, adopt it (fire and forget — boot never waits on the network).
-if (inTelegram() && bank === 0 && level === 1) {
+// Telegram CloudStorage sync. The mirror is only worth having if it is READ,
+// and the old condition — no local bank and level 1 — meant it was read exactly
+// once, on a device that had never played. Writes were shared, reads were not,
+// so two devices on one account drifted apart permanently and the cloud just
+// held whichever saved last.
+//
+// The newer revision now wins and its state is taken WHOLE. Field-by-field
+// merging would be worse than useless: bank and inventory are spent, so taking
+// the max of each would mint currency on every cross-device session.
+//
+// Adopting means reloading. This is the one moment where every screen, the
+// renderer's skin and the in-memory economy all have to agree, and a reload
+// gets that for nothing. It fires only when the cloud is genuinely ahead — you
+// switched devices — never on an ordinary boot, and the local rev is written
+// before the reload, so it cannot loop.
+if (inTelegram()) {
   void (async () => {
-    const [cBank, cLevel, cInv, cBest, cSkin] = await Promise.all([
-      cloudLoad("tf.bank"),
-      cloudLoad("tf.level"),
-      cloudLoad("tf.inv"),
-      cloudLoad("tf.best"),
-      cloudLoad("tf.skin"),
-    ]);
-    if (cBank === null && cLevel === null) return;
-    try {
-      if (cBank) bank = JSON.parse(cBank) as number;
-      if (cLevel) level = JSON.parse(cLevel) as number;
-      if (cBest) best = JSON.parse(cBest) as { score: number; depth: number };
-      if (cSkin) {
-        skin = JSON.parse(cSkin) as string;
-        renderer.setSkin(skin);
-      }
-      if (cInv) Object.assign(inventory, JSON.parse(cInv) as Record<BoosterId, number>);
-      save("tf.bank", bank);
-      save("tf.level", level);
-    } catch {
-      // corrupt cloud payload — keep the local state
-    }
+    const cRev = await cloudLoad(REV_KEY);
+    if (Number(cRev) <= rev) return; // common case: skip the extra round trips
+    const vals = await Promise.all(SYNCED_KEYS.map((k) => cloudLoad(k)));
+    if (adoptIfNewer(localStorage, rev, cRev, vals)) location.reload();
   })();
 }
 
@@ -193,7 +224,7 @@ let lastBiome = "";
 // start clean. CloudStorage mirrors these keys, so it is blanked too —
 // otherwise the next device sync would restore what was just erased.
 async function wipeProgress(): Promise<void> {
-  for (const k of ["tf.bank", "tf.inv", "tf.best", "tf.level", "tf.skin", "tf.daily"]) {
+  for (const k of SYNCED_KEYS) {
     try {
       localStorage.removeItem(k);
     } catch {
@@ -201,6 +232,11 @@ async function wipeProgress(): Promise<void> {
     }
     cloudSave(k, "");
   }
+  // The bump is what makes the wipe travel: the other device compares revs,
+  // sees this one is newer and adopts the cleared state. Without it the stale
+  // device would win the next comparison and hand the progress straight back.
+  bumpRev();
+  flushRev(); // the reload below would cancel the coalesced write
   // Starting over means starting over on the board too — awaited, because the
   // reload below would otherwise cancel the request in flight.
   const initData = initDataRaw();
