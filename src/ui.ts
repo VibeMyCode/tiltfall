@@ -23,7 +23,7 @@ export interface ResultsModel {
   bestScore: number;
   bestDepth: number;
   newBest: boolean;
-  share: (() => void) | null; // Telegram only
+  share: { telegram: (() => void) | null; x: () => void };
   shop: ShopModel;
   // Live getters — the panel re-renders after purchases and must never show
   // a stale snapshot (owner bug: LEVEL stayed at 1 after buying).
@@ -74,6 +74,15 @@ export interface UIHandlers {
 
 // Same drawing language as the booster icons: 24-box, currentColor, so it
 // inherits the button's colour instead of being a coloured sticker.
+const TG_ICON =
+  '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M21 4.5 2.8 11.2c-.9.3-.9 1.1 0 1.4l4.6 1.4 1.7 5.2c.2.6.6.7 1.1.3l2.6-2.1 4.5 3.3c.8.5 1.4.2 1.6-.8L22 5.7c.2-1-.4-1.5-1-1.2z" fill="currentColor"/>' +
+  '<path d="M8 13.4 17.5 7 10 14l-.4 3.5z" fill="#0b1020" opacity=".35"/></svg>';
+
+const X_ICON =
+  '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M17.5 3h3.2l-7 8 8.2 10h-6.4l-5-6.1L4.7 21H1.5l7.5-8.6L1.2 3h6.6l4.5 5.6zM16.4 19.2h1.8L7.7 4.7H5.8z" fill="currentColor"/></svg>';
+
 const HOME_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
   '<path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" ' +
@@ -213,7 +222,7 @@ export function createUI(h: UIHandlers): UI {
       </div>
       <div class="results-actions">
         <button id="res-home" class="act-home" aria-label="Back to title">${HOME_ICON}</button>
-        <button id="res-share" class="hidden">SHARE</button>
+        <button id="res-share">SHARE</button>
         <button id="res-replay">DROP AGAIN</button>
       </div>
     </div>`;
@@ -244,8 +253,40 @@ export function createUI(h: UIHandlers): UI {
   results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", h.onReplay);
   results.querySelector<HTMLButtonElement>("#res-board")!.addEventListener("click", openBoard);
   results.querySelector<HTMLButtonElement>("#res-home")!.addEventListener("click", h.onHome);
+  // SHARE opens a picker rather than committing to one destination, because
+  // where a result is worth posting is the player's call, not ours.
+  const sharePick = document.createElement("div");
+  sharePick.className = "board-overlay hidden";
+  sharePick.innerHTML = `
+    <div class="board-card share-card">
+      <div class="board-head"><span>SHARE RESULT</span><button id="share-close" aria-label="Close">✕</button></div>
+      <div class="share-body">
+        <button class="share-opt" id="share-tg">${TG_ICON}<span>Telegram</span></button>
+        <button class="share-opt" id="share-x">${X_ICON}<span>X</span></button>
+      </div>
+    </div>`;
+  document.body.appendChild(sharePick);
+  const closeShare = (): void => sharePick.classList.add("hidden");
+  sharePick.querySelector<HTMLButtonElement>("#share-close")!.addEventListener("click", closeShare);
+  sharePick.addEventListener("click", (e) => {
+    if (e.target === sharePick) closeShare();
+  });
+  const tgOpt = sharePick.querySelector<HTMLButtonElement>("#share-tg")!;
+  tgOpt.addEventListener("click", () => {
+    closeShare();
+    model?.share?.telegram?.();
+  });
+  sharePick.querySelector<HTMLButtonElement>("#share-x")!.addEventListener("click", () => {
+    closeShare();
+    model?.share?.x();
+  });
+
   const shareBtn = results.querySelector<HTMLButtonElement>("#res-share")!;
-  shareBtn.addEventListener("click", () => model?.share?.());
+  shareBtn.addEventListener("click", () => {
+    // Telegram is only offered where it can work; X always can.
+    tgOpt.classList.toggle("hidden", !model?.share?.telegram);
+    sharePick.classList.remove("hidden");
+  });
 
   const el = (id: string) => document.getElementById(id)!;
   let lastCombo = 1;
@@ -259,15 +300,18 @@ export function createUI(h: UIHandlers): UI {
     // Level panel — live values, never a stale snapshot.
     const lvl = m.level.current();
     const cost = m.level.cost();
+    // Empty means the perk table is exhausted: no NEXT line, and no upgrade
+    // button either, because past the last row a level buys nothing at all.
+    const next = m.level.nextText();
     const lb = el("level-box");
     lb.innerHTML = `
       <div class="lvl-head">
         <button class="lvl-name" id="lvl-tap" title="Tap to reveal reset">LEVEL <b>${lvl}</b></button>
         <button class="reset-link hidden" id="res-reset">RESET</button>
-        <span class="lvl-next"><span>NEXT</span> ${m.level.nextText()}</span>
+        ${next ? `<span class="lvl-next"><span>NEXT</span> ${next}</span>` : `<span class="lvl-max">MAX LEVEL</span>`}
       </div>
-      <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;
-    lb.querySelector<HTMLButtonElement>("#lvl-buy")!.addEventListener("click", () => {
+      ${next ? `<button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>` : ""}`;
+    lb.querySelector<HTMLButtonElement>("#lvl-buy")?.addEventListener("click", () => {
       if (m.level.buy()) renderPanels();
     });
     // Erasing everything is wanted about once in a lifetime, so it is not on
@@ -482,13 +526,14 @@ export function createUI(h: UIHandlers): UI {
       el("res-combo").textContent = String(r.maxCombo);
       el("res-best").textContent = `${r.bestScore} · depth ${r.bestDepth}`;
       el("res-newbest").classList.toggle("hidden", !r.newBest);
-      shareBtn.classList.toggle("hidden", !r.share);
+
       renderPanels();
       document.body.classList.add("gameover"); // hides jump/booster bar
       results.classList.remove("hidden");
     },
     hideResults() {
       closeBoard();
+      closeShare();
       results.classList.add("hidden");
       document.body.classList.remove("gameover");
       model = null;

@@ -39,7 +39,9 @@ export function nextPerkText(level: number): string {
   if (row?.shield) bits.push(`+${row.shield} free shield per run`);
   if (row?.jumpCharge) bits.push(`+${row.jumpCharge} jump charge`);
   // Jump power and reload are the same at every level, so they are not news.
-  return bits.join(" · ") || "no new perks";
+  // Past the end of the table there is nothing to announce: the caller hides
+  // the line rather than printing a sentence that says nothing.
+  return bits.join(" · ");
 }
 
 // --- Daily tasks -----------------------------------------------------------

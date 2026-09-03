@@ -11,13 +11,17 @@ export interface SimBlock extends BlockDef {
 }
 
 export interface SimEvent {
-  kind: "break" | "finish" | "bumper" | "spike" | "pity" | "mine" | "mineblast" | "shield" | "jump";
+  kind: "break" | "finish" | "bumper" | "spike" | "pity" | "mine" | "mineblast" | "shield" | "jump" | "arc" | "shake";
   id?: number;
   btype?: string; // block type on break events (daily-task tracking)
   cascade?: boolean;
   bvx?: number;
   bvy?: number;
   bvz?: number;
+  // "arc": where the lightning that triggered this detonation came from, and
+  // where it landed. Render-only — the sim's outcome does not depend on it.
+  from?: { x: number; y: number; z: number };
+  to?: { x: number; y: number; z: number };
 }
 
 export interface SimOpts {
@@ -35,7 +39,10 @@ export interface SimState {
   blocks: SimBlock[];
   tiersBuilt: number;
   groupDamage: Record<number, number>;
-  queue: { tick: number; groupId: number }[];
+  // `from` is the blast that queued this one, kept so the renderer can draw the
+  // lightning that visibly triggers it. Only CHAIN sets it — a quake is a
+  // shockwave, not a chain.
+  queue: { tick: number; groupId: number; from?: { x: number; y: number; z: number } }[];
   combo: number;
   comboChain: number;
   maxCombo: number;
@@ -144,7 +151,15 @@ export function jump(s: SimState): boolean {
 
 const tierBaseY = (tier: number): number => CONFIG.firstTierTopY + tier * CONFIG.tierSpacing + CONFIG.blockH;
 
-function queueBlast(s: SimState, cx: number, cy: number, cz: number, radius: number, delayStep: number): void {
+function queueBlast(
+  s: SimState,
+  cx: number,
+  cy: number,
+  cz: number,
+  radius: number,
+  delayStep: number,
+  arc = false,
+): void {
   const dist = new Map<number, number>();
   for (const b of s.blocks) {
     // Mines are caught by blasts too (owner) — everything else unbreakable
@@ -160,7 +175,13 @@ function queueBlast(s: SimState, cx: number, cy: number, cz: number, radius: num
   }
   [...dist.entries()]
     .sort((a, b) => a[1] - b[1] || a[0] - b[0])
-    .forEach(([g], i) => s.queue.push({ tick: s.tick + delayStep * (i + 1), groupId: g }));
+    .forEach(([g], i) =>
+      s.queue.push({
+        tick: s.tick + delayStep * (i + 1),
+        groupId: g,
+        from: arc ? { x: cx, y: cy, z: cz } : undefined,
+      }),
+    );
 }
 
 function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimEvent[]): void {
@@ -200,12 +221,15 @@ function breakGroup(s: SimState, groupId: number, cascade: boolean, events: SimE
         // reaction — and the showcase runs in slow motion.
         s.armed.chain = false;
         s.chainBlastTick = s.tick; // arms the slow-mo showcase
-        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.blastRadius * B.chain.blastMul, CONFIG.cascadeStepTicks);
+        // Wide enough to take the whole tier, and stepped fast so the whole
+        // reaction fits inside the slow-motion window.
+        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.showcaseRadius, CONFIG.showcaseStepTicks, true);
       }
       if (!cascade && s.armed.quake) {
         s.armed.quake = false;
         s.chainBlastTick = s.tick; // quake gets the same smooth showcase
-        queueBlast(s, b.cx, b.cy, b.cz, B.quake.blastCells * CONFIG.cell, 6);
+        events.push({ kind: "shake" }); // a quake is felt, not chained
+        queueBlast(s, b.cx, b.cy, b.cz, CONFIG.showcaseRadius, CONFIG.showcaseStepTicks);
       }
     }
   }
@@ -216,6 +240,14 @@ function processQueue(s: SimState, events: SimEvent[]): void {
   s.queue.sort((a, b) => a.tick - b.tick || a.groupId - b.groupId);
   while (s.queue.length && s.queue[0].tick <= s.tick) {
     const e = s.queue.shift()!;
+    // The lightning is emitted only if this group is still standing, so no arc
+    // is drawn to something an earlier blast already took.
+    if (e.from) {
+      const hit = s.blocks.find((b) => b.groupId === e.groupId && !b.broken);
+      if (hit) {
+        events.push({ kind: "arc", from: e.from, to: { x: hit.cx, y: hit.cy, z: hit.cz } });
+      }
+    }
     breakGroup(s, e.groupId, true, events);
   }
 }

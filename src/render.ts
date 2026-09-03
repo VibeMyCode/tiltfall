@@ -11,6 +11,7 @@ import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
@@ -312,7 +313,47 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     rings.push({ mesh: ring, mat: rmat, life: 0.4 });
   }
 
+  // Lightning between one detonation and the next it triggers, so a CHAIN
+  // visibly propagates instead of just going off everywhere at once.
+  const arcs: { mesh: LinesMesh; life: number }[] = [];
+  let shakeMs = 0;
+
+  function spawnArc(from: Vector3, to: Vector3): void {
+    const n = CONFIG.arcSegments;
+    const pts: Vector3[] = [from];
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      const p = Vector3.Lerp(from, to, t);
+      // Jitter fades out at both ends so the bolt still starts and lands on
+      // the two explosions rather than near them.
+      const k = Math.sin(t * Math.PI) * CONFIG.arcJitter;
+      pts.push(
+        new Vector3(
+          p.x + (Math.random() - 0.5) * k,
+          p.y + (Math.random() - 0.5) * k,
+          p.z + (Math.random() - 0.5) * k,
+        ),
+      );
+    }
+    pts.push(to);
+    const line = MeshBuilder.CreateLines("arc", { points: pts }, scene);
+    line.color = new Color3(0.75, 0.92, 1);
+    line.parent = tower;
+    line.isPickable = false;
+    arcs.push({ mesh: line, life: CONFIG.arcLifeS });
+  }
+
   function updateEffects(dtS: number): void {
+    for (let i = arcs.length - 1; i >= 0; i--) {
+      const a = arcs[i];
+      a.life -= dtS;
+      if (a.life <= 0) {
+        a.mesh.dispose();
+        arcs.splice(i, 1);
+        continue;
+      }
+      a.mesh.alpha = a.life / CONFIG.arcLifeS;
+    }
     for (let i = shards.length - 1; i >= 0; i--) {
       const s = shards[i];
       s.life -= dtS;
@@ -382,7 +423,11 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     },
     applyEvents(events) {
       for (const e of events) {
-        if (e.kind === "break" && e.id !== undefined) {
+        if (e.kind === "arc" && e.from && e.to) {
+          spawnArc(toLocal(e.from.x, e.from.y, e.from.z), toLocal(e.to.x, e.to.y, e.to.z));
+        } else if (e.kind === "shake") {
+          shakeMs = CONFIG.quakeShakeMs;
+        } else if (e.kind === "break" && e.id !== undefined) {
           blockMeshes.get(e.id)?.setEnabled(false);
           const info = blockInfo.get(e.id);
           if (info) spawnShards(info, e);
@@ -678,7 +723,19 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       camAim.x += (p.x - camAim.x) * C.camSmooth;
       camAim.y += (aimY - camAim.y) * C.camSmooth;
       camAim.z += (p.z - camAim.z) * C.camSmooth;
-      camera.position.set(camPos.x, camPos.y, camPos.z);
+      // QUAKE shake: applied after smoothing so it never fights the follow,
+      // and decaying, so it reads as one jolt rather than a wobble.
+      if (shakeMs > 0) {
+        shakeMs = Math.max(0, shakeMs - frameMs);
+        const k = (shakeMs / C.quakeShakeMs) ** 2 * C.quakeShakeAmp;
+        camera.position.set(
+          camPos.x + (Math.random() - 0.5) * k,
+          camPos.y + (Math.random() - 0.5) * k,
+          camPos.z + (Math.random() - 0.5) * k,
+        );
+      } else {
+        camera.position.set(camPos.x, camPos.y, camPos.z);
+      }
       camera.setTarget(camAim);
       for (const w of walls) w.position.y = p.y; // endless shaft follows the fall
     },

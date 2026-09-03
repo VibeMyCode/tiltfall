@@ -70,14 +70,28 @@ export const CONFIG = {
   // makes "which one this time?" a real question and gives boosters something
   // to trade against — every point spent here is a point not spent on a level.
   boosters: {
-    quake: { price: 900, blastCells: 3.4 }, // one-shot: huge blast + slow-mo
-    chain: { price: 720, blastMul: 2.2 }, // one-shot: mega-chain + slow-mo
+    quake: { price: 900 }, // one-shot: clears the tier, shakes the screen
+    chain: { price: 720 }, // one-shot: clears the tier as a lightning chain
     x2: { price: 620, scoreMul: 2 }, // run-long
     heavy: { price: 500, gravityMul: 1.12 }, // run-long: lead ball, stone = glass
     shield: { price: 420 }, // instant: +1 mine shield this run
     agility: { price: 340, tiltMul: 1.8 }, // run-long: razor steering + comet tail
   },
-  slowMoScale: 0.35, // playback speed for quake/chain showcase cascades
+  // SHOWCASE (chain + quake). Both now clear the whole tier: 1800 covers the
+  // shaft corner to corner, and the ±400 vertical filter in queueBlast keeps it
+  // to the tier the ball is in.
+  showcaseRadius: 1800,
+  showcaseStepTicks: 2, // ~30 groups, so the reaction lasts ~0.5s of sim time
+  slowMoScale: 0.12, // ...which is about four seconds on screen: the ball hangs
+  slowMoMaxMs: 5000, // real-time cap, so a long cascade cannot stall the run
+  // Camera shake, QUAKE only. Per-hit shake was retired because it read as an
+  // input glitch while steering; a single booster-sized jolt does not.
+  quakeShakeMs: 900,
+  quakeShakeAmp: 30,
+  // Lightning between one detonation and the next it sets off.
+  arcLifeS: 0.28,
+  arcSegments: 7,
+  arcJitter: 55,
 
   // JUMP (owner design): Space / on-screen button; the ball hops up, then must
   // recharge. Power is flat across levels on purpose — see jumpCooldownTicks()
@@ -119,6 +133,9 @@ export const CONFIG = {
   // Telegram: direct Mini App link used by the share button — opens the game
   // itself, not the bot chat (which would cost the recipient an extra tap).
   botUrl: "https://t.me/tiltfall_bot/play",
+  // Shared to X instead of the t.me link: X builds the preview picture from
+  // this page's own card, which t.me cannot give it.
+  webUrl: "https://tiltfall.vercel.app/",
 
   // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
   // Goals are multi-run by design (owner: 1-3 runs cleared everything).

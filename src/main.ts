@@ -32,7 +32,8 @@ import {
   initTelegram,
   inTelegram,
   playerName,
-  shareScore,
+  shareTelegram,
+  shareX,
 } from "./telegram.js";
 import { biomeNameAt } from "./biomes.js";
 
@@ -318,7 +319,12 @@ function showResultsNow(): void {
     bestScore: best.score,
     bestDepth: best.depth,
     newBest: lastNewBest,
-    share: inTelegram() ? () => shareScore(sim.score, sim.depth, CONFIG.botUrl) : null,
+    // Both destinations are offered; X works outside Telegram too, so SHARE is
+    // no longer Telegram-only.
+    share: {
+      telegram: inTelegram() ? () => shareTelegram(sim.score, sim.depth, CONFIG.botUrl) : null,
+      x: () => shareX(sim.score, sim.depth, CONFIG.webUrl),
+    },
     shop: {
       get bank() {
         return bank;
@@ -390,6 +396,8 @@ function showResultsNow(): void {
 
 let accumulator = 0;
 let hitStopMs = 0;
+let showcaseTick = -1e9;
+let slowMoLeftMs = 0;
 let lastTilt = { x: 0, z: 0 };
 let lastLandY = CONFIG.firstTierTopY + CONFIG.blockH;
 let driveTarget: { x: number; z: number } | null = null;
@@ -440,7 +448,15 @@ renderer.scene.onBeforeRenderObservable.add(() => {
 
   // Smooth slow-mo showcase for BOTH quake and chain cascades (no hit-stop —
   // the ball glides while explosions bloom around it).
-  const slowMo = sim.queue.length > 0 && sim.tick - sim.chainBlastTick < 720;
+  // The showcase is bounded in REAL time, not sim ticks: at 0.12 playback a
+  // tick budget large enough for a long cascade would stall the run for the
+  // better part of a minute.
+  if (sim.chainBlastTick !== showcaseTick) {
+    showcaseTick = sim.chainBlastTick;
+    slowMoLeftMs = CONFIG.slowMoMaxMs;
+  }
+  const slowMo = slowMoLeftMs > 0 && sim.queue.length > 0;
+  if (slowMo) slowMoLeftMs -= frameMs;
   if (!started) {
     accumulator = 0; // frozen behind the title screen
   } else if (hitStopMs > 0) {

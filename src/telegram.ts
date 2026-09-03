@@ -18,6 +18,7 @@ interface TgWebApp {
   setBackgroundColor?: (c: string) => void;
   enableClosingConfirmation?: () => void;
   openTelegramLink?: (url: string) => void;
+  openLink?: (url: string, opts?: { try_instant_view?: boolean }) => void;
   shareMessage?: (id: string, cb?: (ok: boolean) => void) => void;
   initDataUnsafe?: { user?: { id: number; first_name?: string; username?: string } };
   HapticFeedback?: TgHaptic;
@@ -118,11 +119,26 @@ export function cloudLoad(key: string): Promise<string | null> {
   });
 }
 
-// Share a result into a chat (uses the bot's deep link).
-export function shareScore(score: number, depth: number, botUrl: string): void {
+const brag = (score: number, depth: number) => `TILTFALL: ${score} points, depth ${depth}. Beat me!`;
+
+// Share into a Telegram chat — the link is the Mini App, so a tap lands the
+// reader in the game rather than in a chat with the bot.
+export function shareTelegram(score: number, depth: number, appUrl: string): void {
   const app = tg();
-  const text = encodeURIComponent(`TILTFALL: ${score} points, depth ${depth}. Beat me!`);
-  const url = `https://t.me/share/url?url=${encodeURIComponent(botUrl)}&text=${text}`;
+  const url = `https://t.me/share/url?url=${encodeURIComponent(appUrl)}&text=${encodeURIComponent(brag(score, depth))}`;
   if (app?.openTelegramLink) app.openTelegramLink(url);
   else window.open(url, "_blank");
+}
+
+// Share to X. The intent opens the composer already filled in — the reader
+// only has to press Post — and X builds the picture from the page's card, so
+// the web URL is shared rather than the t.me one. Inside Telegram the link has
+// to be handed to openLink, or it would try to open inside the Mini App.
+export function shareX(score: number, depth: number, webUrl: string): void {
+  const url =
+    `https://x.com/intent/post?text=${encodeURIComponent(brag(score, depth))}` +
+    `&url=${encodeURIComponent(webUrl)}`;
+  const app = tg();
+  if (inTelegram() && app?.openLink) app.openLink(url);
+  else window.open(url, "_blank", "noopener");
 }
