@@ -179,7 +179,6 @@ export function createUI(h: UIHandlers): UI {
         </div>
         <div class="section daily" id="daily-box"></div>
       </div>
-      <button id="res-reset" class="reset-link" title="Erase all progress">RESET</button>
       <div class="results-actions">
         <button id="res-share" class="hidden">SHARE</button>
         <button id="res-replay">DROP AGAIN</button>
@@ -211,11 +210,6 @@ export function createUI(h: UIHandlers): UI {
 
   results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", h.onReplay);
   results.querySelector<HTMLButtonElement>("#res-board")!.addEventListener("click", openBoard);
-  // Destructive and irreversible, so it asks first — and it is deliberately the
-  // last thing in the scroll, below the daily tasks.
-  results.querySelector<HTMLButtonElement>("#res-reset")!.addEventListener("click", () => {
-    if (confirm("Erase level, bank, boosters, skins and best score, and start over?")) h.onReset();
-  });
   const shareBtn = results.querySelector<HTMLButtonElement>("#res-share")!;
   shareBtn.addEventListener("click", () => model?.share?.());
 
@@ -234,12 +228,23 @@ export function createUI(h: UIHandlers): UI {
     const lb = el("level-box");
     lb.innerHTML = `
       <div class="lvl-head">
-        <span class="lvl-name">LEVEL <b>${lvl}</b></span>
+        <button class="lvl-name" id="lvl-tap" title="Tap to reveal reset">LEVEL <b>${lvl}</b></button>
+        <button class="reset-link hidden" id="res-reset">RESET</button>
         <span class="lvl-next"><span>NEXT</span> ${m.level.nextText()}</span>
       </div>
       <button id="lvl-buy" ${m.shop.bank < cost ? "disabled" : ""}>LEVEL UP — ${cost}</button>`;
     lb.querySelector<HTMLButtonElement>("#lvl-buy")!.addEventListener("click", () => {
       if (m.level.buy()) renderPanels();
+    });
+    // Erasing everything is wanted about once in a lifetime, so it is not on
+    // screen until asked for: tapping the level number reveals it, and it costs
+    // no layout while hidden. Re-rendering the panel hides it again.
+    const reset = lb.querySelector<HTMLButtonElement>("#res-reset")!;
+    lb.querySelector<HTMLButtonElement>("#lvl-tap")!.addEventListener("click", () => {
+      reset.classList.toggle("hidden");
+    });
+    reset.addEventListener("click", () => {
+      if (confirm("Erase level, bank, boosters, skins and best score, and start over?")) h.onReset();
     });
 
     // Skins.
@@ -352,7 +357,7 @@ export function createUI(h: UIHandlers): UI {
     `<div class="bd-row"><span class="bd-rank">${i + 1}</span>${skinDot(r.skin)}` +
     `<span class="bd-name">${safe(r.name)}</span>` +
     `<span class="bd-lvl">L${r.level}</span><b class="bd-best">${r.best}</b>` +
-    `<span class="bd-total">${r.total}</span></div>`;
+    `<span class="bd-total">${r.total}</span><span class="bd-runs">${r.runs}</span></div>`;
 
   async function renderBoard(): Promise<void> {
     const box = document.getElementById("board-box");
@@ -371,7 +376,8 @@ export function createUI(h: UIHandlers): UI {
       (b.rows.length
         ? `<div class="bd-row bd-head"><span class="bd-rank">#</span><i class="bd-dot"></i>` +
           `<span class="bd-name">player</span><span class="bd-lvl">lvl</span>` +
-          `<b class="bd-best">best</b><span class="bd-total">total</span></div>` +
+          `<b class="bd-best">best</b><span class="bd-total">total</span>` +
+          `<span class="bd-runs">runs</span></div>` +
           b.rows.map(boardRow).join("")
         : `<div class="bd-wait">nobody has ranked yet — be first</div>`);
     paintRank();

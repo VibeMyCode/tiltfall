@@ -348,7 +348,20 @@ body.gameover .booster-bar, body.gameover .hud { display: none; }
 
 /* Level row: proper alignment, readable labels (owner) */
 .lvl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; min-height: 26px; }
-.lvl-name { display: flex; align-items: baseline; gap: 6px; flex: none; font-size: 13px; letter-spacing: 0.14em; color: #9fb4d8; }
+.lvl-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: none;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: #9fb4d8;
+  cursor: pointer;
+}
 .lvl-name b { color: #ffe9a8; font-size: 17px; margin-left: 4px; }
 .lvl-stats { display: flex; align-items: baseline; gap: 6px; }
 .lvl-name i { font-style: normal; font-size: 10px; letter-spacing: 0.08em; color: #6f7ea3; text-transform: uppercase; }
@@ -540,7 +553,7 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
 .bd-me.hidden { display: none; }
 .bd-row {
   display: grid;
-  grid-template-columns: 26px 14px 1fr 34px 62px 62px;
+  grid-template-columns: 24px 14px minmax(54px, 1fr) 30px 58px 54px 36px;
   align-items: center;
   gap: 8px;
   padding: 5px 2px;
@@ -566,6 +579,7 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
 .bd-lvl { color: #8fa2c9; font-size: 11px; }
 .bd-best { text-align: right; color: #bfe6ff; font-variant-numeric: tabular-nums; }
 .bd-total { text-align: right; color: #6d7ea3; font-size: 11px; font-variant-numeric: tabular-nums; }
+.bd-runs { text-align: right; color: #6d7ea3; font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* Entry points to the board. Present on the title screen and near the top of
    the results card, because the inline version was below the fold. */
@@ -641,10 +655,7 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
 /* Reset sits in the card's corner, out of the scroll flow entirely — it was
    costing a row of height for something wanted once in a lifetime. */
 .reset-link {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  z-index: 2;
+  flex: none;
   padding: 4px 8px;
   background: none;
   border: 1px solid #2a3554;
@@ -655,4 +666,5 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
   letter-spacing: 0.12em;
   cursor: pointer;
 }
-.reset-link:hover { color: #c9d6f0; border-color: #56658c; }
+.reset-link:hover { color: #ff9d92; border-color: #7c4a4a; }
+.reset-link.hidden { display: none; }
