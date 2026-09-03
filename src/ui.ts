@@ -74,6 +74,11 @@ export interface UIHandlers {
 
 // Same drawing language as the booster icons: 24-box, currentColor, so it
 // inherits the button's colour instead of being a coloured sticker.
+const HOME_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+  'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 const BOARD_ICON =
   '<svg class="ico" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
   '<rect x="3.5" y="12.5" width="5" height="8" rx="1.3" fill="currentColor" opacity="0.55"/>' +
@@ -206,8 +211,8 @@ export function createUI(h: UIHandlers): UI {
         </div>
         <div class="section daily" id="daily-box"></div>
       </div>
-      <button class="card-close" id="res-home" aria-label="Back to title">✕</button>
       <div class="results-actions">
+        <button id="res-home" class="act-home" aria-label="Back to title">${HOME_ICON}</button>
         <button id="res-share" class="hidden">SHARE</button>
         <button id="res-replay">DROP AGAIN</button>
       </div>
