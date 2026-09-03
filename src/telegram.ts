@@ -75,9 +75,25 @@ export const haptic = {
 
 // CloudStorage mirrors progress across the player's devices; localStorage
 // stays the source of truth so the game works outside Telegram too.
+// Telegram accepts only A-Z, a-z, 0-9, _ and - in a CloudStorage key. Our keys
+// are named "tf.bank" and friends, so EVERY write was rejected — and setItem
+// reports through its callback rather than by throwing, so attempt() never saw
+// it and the failure was completely silent. Nothing was ever stored in the
+// cloud, which is why syncing between devices never worked.
+export const cloudKey = (k: string): string => k.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 128);
+
+// Last error Telegram reported, so a failure is diagnosable instead of silent.
+// Exposed through __tf.cloud().
+let cloudErr: string | null = null;
+export const cloudError = (): string | null => cloudErr;
+
 export function cloudSave(key: string, value: string): void {
   if (!inTelegram()) return; // the browser stub logs an error for every call
-  attempt(() => tg()?.CloudStorage?.setItem(key, value));
+  attempt(() =>
+    tg()?.CloudStorage?.setItem(cloudKey(key), value, (err) => {
+      if (err) cloudErr = `setItem ${cloudKey(key)}: ${String(err)}`;
+    }),
+  );
 }
 
 export function cloudLoad(key: string): Promise<string | null> {
@@ -95,7 +111,10 @@ export function cloudLoad(key: string): Promise<string | null> {
       }
     };
     setTimeout(() => finish(null), 1500); // never block boot on the network
-    cs.getItem(key, (err, v) => finish(err ? null : (v ?? null)));
+    cs.getItem(cloudKey(key), (err, v) => {
+      if (err) cloudErr = `getItem ${cloudKey(key)}: ${String(err)}`;
+      finish(err ? null : (v ?? null));
+    });
   });
 }
 

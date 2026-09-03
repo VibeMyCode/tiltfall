@@ -27,6 +27,7 @@ import {
   cloudLoad,
   cloudSave,
   haptic,
+  cloudError,
   initDataRaw,
   initTelegram,
   inTelegram,
@@ -558,6 +559,24 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   // Testing helper: run `__tf.reset()` in the console. Players get the same
   // thing from the RESET PROGRESS button on the results card.
   reset: () => void wipeProgress(),
+  // Round-trips a probe through CloudStorage and reports what came back. The
+  // dotted key names silently failed every write for the life of this feature,
+  // so there is now something to run instead of something to guess.
+  async cloud() {
+    const probe = String(Date.now());
+    cloudSave("tf.probe", probe);
+    await new Promise((r) => setTimeout(r, 600));
+    const back = await cloudLoad("tf.probe");
+    return {
+      inTelegram: inTelegram(),
+      wrote: probe,
+      readBack: back,
+      ok: back === probe,
+      rev,
+      cloudRev: await cloudLoad(REV_KEY),
+      lastError: cloudError(),
+    };
+  },
 };
 
 renderer.engine.runRenderLoop(() => renderer.scene.render());
