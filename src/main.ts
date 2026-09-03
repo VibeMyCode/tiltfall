@@ -343,7 +343,23 @@ let dragAnchor: { x: number; z: number } | null = null;
 const clampShaft = (v: number, max: number) => Math.min(max - CONFIG.ballRadius, Math.max(CONFIG.ballRadius, v));
 
 function controlTilt(kb: { x: number; z: number }): { x: number; z: number } {
-  return driveTarget ? driveTilt(sim.ball, driveTarget, kb) : kb;
+  if (driveTarget) return driveTilt(sim.ball, driveTarget, kb);
+  if (input.forced()) return kb; // __tf.setTilt means raw tilt, for tests
+  // Arrows used to bypass the controller and apply full lateral acceleration
+  // with no damping at all, which is why the desktop ball flew. They now aim a
+  // point ahead of the ball and let the same chase drive it, so keyboard and
+  // drag feel like one game instead of two.
+  const len = Math.sqrt(kb.x * kb.x + kb.z * kb.z);
+  if (len === 0) return kb; // nothing held — coast, exactly as a released drag does
+  const lead = CONFIG.keyLeadDist / len;
+  return driveTilt(
+    sim.ball,
+    {
+      x: clampShaft(sim.ball.x + kb.x * lead, CONFIG.shaftW),
+      z: clampShaft(sim.ball.z + kb.z * lead, CONFIG.shaftD),
+    },
+    { x: 0, z: 0 },
+  );
 }
 
 renderer.scene.onBeforeRenderObservable.add(() => {

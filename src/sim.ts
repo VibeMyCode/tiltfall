@@ -261,11 +261,19 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
     const threshold = s.runOn.heavy && b.type === "stone" ? CONFIG.thresholds.glass : b.threshold;
     if (breakable && dmg >= threshold) {
       breakGroup(s, b.groupId, false, events);
+      // Owner design: glass is PUNCHED THROUGH — the ball keeps falling and
+      // only pays a speed cost, which is what reads as the brief hitch on
+      // impact. STONE is the thing that throws you back up. HEAVY shifts both
+      // one step toward the ball: it punches stone the way a bare ball punches
+      // glass, and barely notices glass at all.
+      const punchLoss =
+        s.runOn.heavy && b.type !== "stone" ? CONFIG.punchLossHeavy : CONFIG.breakThroughLoss;
       if (axis === "y" && vAxis > 0) {
-        ball.vy = -ball.vy * CONFIG.breakBounce;
-      } else if (axis === "x") ball.vx *= CONFIG.breakThroughLoss;
-      else if (axis === "y") ball.vy *= CONFIG.breakThroughLoss;
-      else ball.vz *= CONFIG.breakThroughLoss;
+        if (b.type === "stone" && !s.runOn.heavy) ball.vy = -ball.vy * CONFIG.breakBounce;
+        else ball.vy *= punchLoss;
+      } else if (axis === "x") ball.vx *= punchLoss;
+      else if (axis === "y") ball.vy *= punchLoss;
+      else ball.vz *= punchLoss;
       continue;
     }
     if (breakable) s.groupDamage[b.groupId] = dmg;

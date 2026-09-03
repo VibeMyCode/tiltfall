@@ -106,6 +106,7 @@ export function createUI(h: UIHandlers): UI {
       <p class="tagline">Steer the falling ball. Smash everything. Dodge the mines.</p>
       <div class="title-best hidden" id="title-best"></div>
       <button id="title-play">PLAY</button>
+      <button id="title-board" class="title-board">🏆 LEADERBOARD</button>
       <div class="title-hint" id="title-hint"></div>
     </div>`;
   document.body.appendChild(title);
@@ -169,6 +170,7 @@ export function createUI(h: UIHandlers): UI {
           <span class="chip">▦ <b id="res-broken">0</b><i>blocks</i></span>
           <span class="chip">× <b id="res-combo">1</b><i>combo</i></span>
         </div>
+        <button class="board-open" id="res-board">🏆 LEADERBOARD</button>
         <div class="bank-line">BANK <b class="bank" id="shop-bank">0</b></div>
         <div class="level-box" id="level-box"></div>
         <div class="skin-row" id="skin-row"></div>
@@ -177,16 +179,39 @@ export function createUI(h: UIHandlers): UI {
           <div class="shop-grid" id="shop-grid"></div>
         </div>
         <div class="section daily" id="daily-box"></div>
-        <div class="section" id="board-box"></div>
-        <button id="res-reset" class="reset-link">RESET PROGRESS</button>
       </div>
+      <button id="res-reset" class="reset-link" title="Erase all progress">RESET</button>
       <div class="results-actions">
         <button id="res-share" class="hidden">SHARE</button>
         <button id="res-replay">DROP AGAIN</button>
       </div>
     </div>`;
   document.body.appendChild(results);
+
+  // The board lives in its own overlay rather than inline: on the results card
+  // it only added scroll height and still ended up below the fold.
+  const boardView = document.createElement("div");
+  boardView.className = "board-overlay hidden";
+  boardView.innerHTML = `
+    <div class="board-card">
+      <div class="board-head"><span>LEADERBOARD</span><span class="bd-stat" id="bd-stat"></span><button id="board-close" aria-label="Close">✕</button></div>
+      <div class="board-body" id="board-box"></div>
+    </div>`;
+  document.body.appendChild(boardView);
+  const openBoard = (): void => {
+    boardView.classList.remove("hidden");
+    void renderBoard();
+  };
+  const closeBoard = (): void => boardView.classList.add("hidden");
+  boardView.querySelector<HTMLButtonElement>("#board-close")!.addEventListener("click", closeBoard);
+  // Tapping the backdrop closes it — on a phone the ✕ is a long reach.
+  boardView.addEventListener("click", (e) => {
+    if (e.target === boardView) closeBoard();
+  });
+  title.querySelector<HTMLButtonElement>("#title-board")!.addEventListener("click", openBoard);
+
   results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", h.onReplay);
+  results.querySelector<HTMLButtonElement>("#res-board")!.addEventListener("click", openBoard);
   // Destructive and irreversible, so it asks first — and it is deliberately the
   // last thing in the scroll, below the daily tasks.
   results.querySelector<HTMLButtonElement>("#res-reset")!.addEventListener("click", () => {
@@ -292,10 +317,26 @@ export function createUI(h: UIHandlers): UI {
   // --- leaderboard ---------------------------------------------------------
   let myRank: SubmitResult | null = null;
 
+  // Patterned skins carry rgb [1,1,1] — their colour lives in the pattern — so
+  // a plain swatch made every one of them white. Draw the real skin once per
+  // id and reuse the data URL down the whole list.
+  const dotCache = new Map<string, string>();
   const skinDot = (id: string): string => {
-    const rgb = SKINS[id]?.rgb ?? [0.5, 0.6, 0.8];
-    const c = rgb.map((v) => Math.round(Math.min(1, v) * 255)).join(",");
-    return `<i class="bd-dot" style="background:rgb(${c})"></i>`;
+    let url = dotCache.get(id);
+    if (url === undefined) {
+      const c = document.createElement("canvas");
+      c.width = c.height = 28;
+      const ctx = c.getContext("2d");
+      if (ctx && SKINS[id]) {
+        drawSkin(ctx, id, 28);
+        url = c.toDataURL();
+      } else {
+        url = "";
+      }
+      dotCache.set(id, url);
+    }
+    const style = url ? `background-image:url(${url})` : "background:#4a5a7d";
+    return `<i class="bd-dot" style="${style}"></i>`;
   };
 
   const paintRank = (): void => {
@@ -320,15 +361,16 @@ export function createUI(h: UIHandlers): UI {
   async function renderBoard(): Promise<void> {
     const box = document.getElementById("board-box");
     if (!box) return;
-    box.innerHTML = `<div class="section-head">LEADERBOARD</div><div class="bd-wait">loading…</div>`;
+    box.innerHTML = `<div class="bd-wait">loading…</div>`;
     const b = await fetchBoard();
     if (!box.isConnected) return;
     if (!b) {
       box.innerHTML = ""; // offline, or no board deployed — not worth an error
       return;
     }
+    const stat = document.getElementById("bd-stat");
+    if (stat) stat.textContent = `${b.players} players · ${b.runs} runs`;
     box.innerHTML =
-      `<div class="section-head">LEADERBOARD <span class="bd-stat">${b.players} players · ${b.runs} runs</span></div>` +
       `<div class="bd-me hidden" id="bd-me"></div>` +
       (b.rows.length
         ? `<div class="bd-row bd-head"><span class="bd-rank">#</span><i class="bd-dot"></i>` +
@@ -407,11 +449,11 @@ export function createUI(h: UIHandlers): UI {
       el("res-newbest").classList.toggle("hidden", !r.newBest);
       shareBtn.classList.toggle("hidden", !r.share);
       renderPanels();
-      void renderBoard();
       document.body.classList.add("gameover"); // hides jump/booster bar
       results.classList.remove("hidden");
     },
     hideResults() {
+      closeBoard();
       results.classList.add("hidden");
       document.body.classList.remove("gameover");
       model = null;

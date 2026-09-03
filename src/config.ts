@@ -41,7 +41,8 @@ export const CONFIG = {
   // free fall lands at J ≈ 25.
   ballMass: 1,
   impulseScale: 96,
-  breakThroughLoss: 0.62,
+  breakThroughLoss: 0.62, // speed kept when punching through — the felt "hitch"
+  punchLossHeavy: 0.88, // the lead ball hardly slows for anything but stone
   breakBounce: 0.32, // smashing DOWN through a piece pops the ball back up —
   // a beat of air time to aim at the next tier (owner design)
   // Score is DENOMINATED ×1/10 (owner): small readable numbers, and every
@@ -178,6 +179,10 @@ export const CONFIG = {
   // RELATIVE pointer drag (owner: a finger glued to the disc covers the
   // action on phones): the drag MOVES the target from where the ball was at
   // touch-start, amplified — the finger can rest anywhere on screen.
+  // How far ahead of the ball the arrow keys aim. It sets the cruise speed the
+  // chase settles at (targetGainVel * lead / targetGainDist), so ~900 u/s here
+  // — a shaft crossing in about a second and a third.
+  keyLeadDist: 320,
   pointerDragAmplify: 1.6,
   pointerDragAmplifyTouch: 1.05, // calmer on phones (owner)
   doubleTapMs: 300, // touch: double tap = JUMP (the button is desktop-only)
