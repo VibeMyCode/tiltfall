@@ -424,8 +424,50 @@ body.gameover .booster-bar, body.gameover .hud { display: none; }
   text-shadow: 0 0 34px rgba(127, 212, 255, 0.55);
 }
 .tagline { margin: 10px 0 0; font-size: 14px; color: #9fb4d8; letter-spacing: 0.03em; }
-.title-best { margin-top: 14px; font-size: 13px; color: #ffe9a8; letter-spacing: 0.08em; }
-.title-best.hidden { display: none; }
+/* Account card on the title screen: the same numbers whichever device you
+   signed in from, so the player can see at a glance what they carried in. */
+.account { margin: 4px 0 18px; }
+.acc-name {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #ffe9a8;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.acc-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.acc-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 62px;
+  padding: 7px 10px;
+  background: rgba(10, 14, 28, 0.5);
+  border: 1px solid #263251;
+  border-radius: 10px;
+  font: inherit;
+}
+button.acc-cell { cursor: pointer; }
+button.acc-cell:hover { border-color: #4d7ab8; }
+.acc-cell i {
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #6f7ea3;
+  text-transform: uppercase;
+}
+.acc-cell b {
+  font-size: 16px;
+  color: #cfe6ff;
+  font-variant-numeric: tabular-nums;
+}
+.account .reset-link { margin: 12px auto 0; }
 #title-play {
   margin-top: 28px;
   padding: 16px 54px;

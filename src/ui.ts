@@ -65,6 +65,9 @@ export interface UIHandlers {
   onStart: () => void; // title screen → first run (also unlocks audio)
   mute: { get: () => boolean; toggle: () => boolean };
   best: () => { score: number; depth: number };
+  // Who you are and what you have carried in — read once when the title screen
+  // is built, which is the only time it is shown.
+  account: () => { name: string | null; level: number; bank: number };
 }
 
 // Same drawing language as the booster icons: 24-box, currentColor, so it
@@ -110,7 +113,7 @@ export function createUI(h: UIHandlers): UI {
     <div class="title-card">
       <h1>TILTFALL</h1>
       <p class="tagline">Steer the falling ball. Smash everything. Dodge the mines.</p>
-      <div class="title-best hidden" id="title-best"></div>
+      <div class="account" id="title-account"></div>
       <button id="title-play">PLAY</button>
       <button id="title-board" class="title-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
       <div class="title-hint" id="title-hint"></div>
@@ -121,11 +124,30 @@ export function createUI(h: UIHandlers): UI {
   title.querySelector<HTMLElement>("#title-hint")!.innerHTML = coarse
     ? "drag anywhere to steer · <b>double tap</b> to jump · tap a booster to use it"
     : "drag or <b>WASD</b> to steer · <b>SPACE</b> to jump · <b>1-6</b> activate boosters";
-  const b = h.best();
-  if (b.score > 0) {
-    const tb = title.querySelector<HTMLElement>("#title-best")!;
-    tb.textContent = `BEST ${b.score} · depth ${b.depth}`;
-    tb.classList.remove("hidden");
+  // The account card: whichever device you sign in from, this is what you are
+  // carrying. Outside Telegram there is no account to name, so it says so
+  // rather than inventing one.
+  {
+    const a = h.account();
+    const b = h.best();
+    const acc = title.querySelector<HTMLElement>("#title-account")!;
+    acc.innerHTML =
+      `<div class="acc-name">${a.name ? a.name.replace(/[<>&"]/g, "").slice(0, 24) : "LOCAL PLAY"}</div>` +
+      `<div class="acc-row">` +
+      `<button class="acc-cell" id="acc-level" title="Tap to reveal reset"><i>level</i><b>${a.level}</b></button>` +
+      `<span class="acc-cell"><i>bank</i><b>${a.bank}</b></span>` +
+      `<span class="acc-cell"><i>best</i><b>${b.score}</b></span>` +
+      `<span class="acc-cell"><i>depth</i><b>${b.depth}</b></span>` +
+      `</div>` +
+      `<button class="reset-link hidden" id="acc-reset">RESET PROGRESS</button>`;
+    // Same rule as on the results card: a level number reveals the reset.
+    const accReset = acc.querySelector<HTMLButtonElement>("#acc-reset")!;
+    acc.querySelector<HTMLButtonElement>("#acc-level")!.addEventListener("click", () => {
+      accReset.classList.toggle("hidden");
+    });
+    accReset.addEventListener("click", () => {
+      if (confirm("Erase level, bank, boosters, skins and best score, and start over?")) h.onReset();
+    });
   }
   title.querySelector<HTMLButtonElement>("#title-play")!.addEventListener("click", () => {
     title.classList.add("gone");

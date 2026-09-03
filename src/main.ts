@@ -23,7 +23,16 @@ import { createUI } from "./ui.js";
 import { createRecorder, type RunRecorder } from "./replay.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
 import { resetBoard, submitRun } from "./board.js";
-import { cloudLoad, cloudSave, haptic, initDataRaw, initTelegram, inTelegram, shareScore } from "./telegram.js";
+import {
+  cloudLoad,
+  cloudSave,
+  haptic,
+  initDataRaw,
+  initTelegram,
+  inTelegram,
+  playerName,
+  shareScore,
+} from "./telegram.js";
 import { biomeNameAt } from "./biomes.js";
 
 const DT_MS = 1000 * CONFIG.dt;
@@ -251,6 +260,7 @@ const ui = createUI({
   onActivate: tryActivate,
   onJump: tryJump,
   best: () => best,
+  account: () => ({ name: playerName(), level, bank }),
   mute: { get: () => isMuted(), toggle: () => toggleMute() },
   onStart: () => {
     initAudio(); // browsers only allow audio after a gesture
