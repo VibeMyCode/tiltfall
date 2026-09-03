@@ -41,7 +41,11 @@ export const CONFIG = {
   // free fall lands at J ≈ 25.
   ballMass: 1,
   impulseScale: 96,
-  breakThroughLoss: 0.62, // speed kept when punching through — the felt "hitch"
+  // Speed KEPT when punching through, per material — the smaller the number,
+  // the harder the hitch. Stone is absent because stone does not let you
+  // through at all: it throws you back (breakBounce).
+  glassThroughLoss: 0.45, // was 0.62 — the ball went through too freely
+  bombThroughLoss: 0.22, // the blast has to cost more than a pane of glass
   punchLossHeavy: 0.88, // the lead ball hardly slows for anything but stone
   breakBounce: 0.32, // smashing DOWN through a piece pops the ball back up —
   // a beat of air time to aim at the next tier (owner design)
@@ -82,13 +86,15 @@ export const CONFIG = {
   jumpBasePower: 1000,
   jumpHoverMargin: 1.6, // cooldown ÷ fall-back time; at 1.0 the ball breaks even
   // Levels are bought with the same bank as boosters, so these two curves have
-  // to be read together. Growth was 1.7, which is fine for the first handful
-  // and then a wall: the perk table ends at 15, and 1.7 put level 15 roughly
-  // 870 runs away, so most of the table was content nobody would ever see.
-  // 1.42 keeps the early levels quick and brings 15 to ~130 runs — far, but a
-  // destination rather than an asymptote.
-  levelBaseCost: 300,
-  levelCostGrowth: 1.42,
+  // to be read together. Measured against a real run of ~600 points:
+  //   level 2 costs 3 runs — you have played the game before it offers you
+  //   anything, which 300 (half a run) plainly did not;
+  //   level 15 lands near 200 runs, far enough to be a destination and close
+  //   enough to be one.
+  // The full booster set is 3500, so it stays DEARER than a level: progression
+  // is the main sink and boosters are the occasional choice, not the default.
+  levelBaseCost: 1800,
+  levelCostGrowth: 1.22,
 
   // LEVEL PERK TABLE (owner): every level unlocks something concrete, and
   // boosters appear cheapest-first so the shop grows with the player.

@@ -1,8 +1,9 @@
 // Owner rule for breaking a block from above:
 //
-//              bare ball          HEAVY
-//   glass      punch through      punch through, barely slowed
-//   stone      bounce back up     punch through
+//              bare ball              HEAVY
+//   glass      through, brakes        through, barely slowed
+//   bomb       through, brakes more   through, brakes like glass
+//   stone      thrown back up         through, brakes like glass
 //
 // Tested on a hand-placed single block so the outcome is the rule and not the
 // tower's luck.
@@ -11,7 +12,7 @@ import { CONFIG } from "../src/config";
 import { activateBooster, createSim, step, type SimState } from "../src/sim";
 
 // One block directly under the ball, nothing else in the shaft.
-function dropOnto(type: "glass" | "stone", heavy = false): SimState {
+function dropOnto(type: "glass" | "stone" | "bomb", heavy = false): SimState {
   const s = createSim(20260903);
   if (heavy) activateBooster(s, "heavy");
   const { x, z } = s.ball;
@@ -58,6 +59,16 @@ describe("punching through", () => {
 
   it("HEAVY punches stone too", () => {
     expect(vyAfterBreak(dropOnto("stone", true))).toBeGreaterThan(0);
+  });
+
+  it("a bomb costs more speed than a pane of glass", () => {
+    // Both let the ball through; the blast is what makes it the slower way.
+    expect(vyAfterBreak(dropOnto("bomb"))).toBeLessThan(vyAfterBreak(dropOnto("glass")));
+    expect(vyAfterBreak(dropOnto("bomb"))).toBeGreaterThan(0); // through, not back
+  });
+
+  it("HEAVY promotes a bomb to the glass rung", () => {
+    expect(vyAfterBreak(dropOnto("bomb", true))).toBeGreaterThan(vyAfterBreak(dropOnto("bomb")));
   });
 
   it("HEAVY barely slows on glass, a bare ball pays for the hitch", () => {

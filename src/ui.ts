@@ -54,6 +54,7 @@ export interface UI {
   showResults: (r: ResultsModel) => void;
   hideResults: () => void;
   setRank: (r: SubmitResult | null) => void;
+  showTitle: () => void;
 }
 
 export interface UIHandlers {
@@ -63,6 +64,7 @@ export interface UIHandlers {
   onActivate: (id: BoosterId) => void;
   onJump: () => void;
   onStart: () => void; // title screen → first run (also unlocks audio)
+  onHome: () => void; // leave the results card and go back to the title screen
   mute: { get: () => boolean; toggle: () => boolean };
   best: () => { score: number; depth: number };
   // Who you are and what you have carried in — read once when the title screen
@@ -127,7 +129,9 @@ export function createUI(h: UIHandlers): UI {
   // The account card: whichever device you sign in from, this is what you are
   // carrying. Outside Telegram there is no account to name, so it says so
   // rather than inventing one.
-  {
+  // Re-rendered every time the title screen is shown, not just at boot: coming
+  // back from a run, the level, bank and best have all moved.
+  function renderAccount(): void {
     const a = h.account();
     const b = h.best();
     const acc = title.querySelector<HTMLElement>("#title-account")!;
@@ -149,6 +153,7 @@ export function createUI(h: UIHandlers): UI {
       if (confirm("Erase level, bank, boosters, skins and best score, and start over?")) h.onReset();
     });
   }
+  renderAccount();
   title.querySelector<HTMLButtonElement>("#title-play")!.addEventListener("click", () => {
     title.classList.add("gone");
     document.body.classList.remove("titlescreen");
@@ -201,6 +206,7 @@ export function createUI(h: UIHandlers): UI {
         </div>
         <div class="section daily" id="daily-box"></div>
       </div>
+      <button class="card-close" id="res-home" aria-label="Back to title">✕</button>
       <div class="results-actions">
         <button id="res-share" class="hidden">SHARE</button>
         <button id="res-replay">DROP AGAIN</button>
@@ -232,6 +238,7 @@ export function createUI(h: UIHandlers): UI {
 
   results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", h.onReplay);
   results.querySelector<HTMLButtonElement>("#res-board")!.addEventListener("click", openBoard);
+  results.querySelector<HTMLButtonElement>("#res-home")!.addEventListener("click", h.onHome);
   const shareBtn = results.querySelector<HTMLButtonElement>("#res-share")!;
   shareBtn.addEventListener("click", () => model?.share?.());
 
@@ -452,6 +459,11 @@ export function createUI(h: UIHandlers): UI {
       biomeBanner.classList.remove("show");
       void biomeBanner.offsetWidth; // restart the animation
       biomeBanner.classList.add("show");
+    },
+    showTitle() {
+      renderAccount();
+      title.classList.remove("gone");
+      document.body.classList.add("titlescreen");
     },
     setRank(sub) {
       myRank = sub;

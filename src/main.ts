@@ -263,6 +263,13 @@ const ui = createUI({
   best: () => best,
   account: () => ({ name: playerName(), level, bank }),
   mute: { get: () => isMuted(), toggle: () => toggleMute() },
+  onHome: () => {
+    // Back to the title screen: the loop freezes on `started`, so the tower
+    // simply stops behind the card instead of playing on unattended.
+    started = false;
+    ui.hideResults();
+    ui.showTitle();
+  },
   onStart: () => {
     initAudio(); // browsers only allow audio after a gesture
     started = true;

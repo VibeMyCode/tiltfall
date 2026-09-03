@@ -266,8 +266,18 @@ function resolveBlocks(s: SimState, events: SimEvent[]): void {
       // impact. STONE is the thing that throws you back up. HEAVY shifts both
       // one step toward the ball: it punches stone the way a bare ball punches
       // glass, and barely notices glass at all.
-      const punchLoss =
-        s.runOn.heavy && b.type !== "stone" ? CONFIG.punchLossHeavy : CONFIG.breakThroughLoss;
+      // The ladder, and HEAVY promotes every rung by one:
+      //            bare ball                HEAVY
+      //   glass     brakes                  barely slowed
+      //   bomb      brakes harder           brakes like glass
+      //   stone     thrown back up          punches through like glass
+      const punchLoss = s.runOn.heavy
+        ? b.type === "glass"
+          ? CONFIG.punchLossHeavy
+          : CONFIG.glassThroughLoss
+        : b.type === "bomb"
+          ? CONFIG.bombThroughLoss
+          : CONFIG.glassThroughLoss;
       if (axis === "y" && vAxis > 0) {
         if (b.type === "stone" && !s.runOn.heavy) ball.vy = -ball.vy * CONFIG.breakBounce;
         else ball.vy *= punchLoss;
