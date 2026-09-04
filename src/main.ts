@@ -19,7 +19,7 @@ import { activateBooster, createSim, driveTilt, jump, predictPath, step, type Si
 import { SFX, initAudio, isMuted, toggleMute } from "./sfx.js";
 import { attachInput, isTouch } from "./input.js";
 import { createRenderer } from "./render.js";
-import { createUI } from "./ui.js";
+import { createUI, type ResultsModel } from "./ui.js";
 import { createRecorder, type RunRecorder } from "./replay.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
 import { resetBoard, submitRun } from "./board.js";
@@ -271,6 +271,7 @@ const ui = createUI({
     ui.hideResults();
     ui.showTitle();
   },
+  onShop: () => ui.showMenu(resultsModel()),
   onStart: () => {
     initAudio(); // browsers only allow audio after a gesture
     started = true;
@@ -310,8 +311,11 @@ function onFinish(): void {
   resultsTimer = window.setTimeout(showResultsNow, 1500);
 }
 
-function showResultsNow(): void {
-  ui.showResults({
+// The same model backs the game-over card and the shop opened from the title
+// screen: level, skins, boosters and daily tasks are the player's state, not
+// the run's. The run fields come straight off the current sim, which the menu
+// hides anyway rather than inventing zeroes for.
+const resultsModel = (): ResultsModel => ({
     score: sim.score,
     depth: sim.depth,
     broken: sim.broken,
@@ -391,7 +395,10 @@ function showResultsNow(): void {
         save("tf.bank", bank);
       },
     },
-  });
+});
+
+function showResultsNow(): void {
+  ui.showResults(resultsModel());
 }
 
 let accumulator = 0;

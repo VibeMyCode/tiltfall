@@ -238,7 +238,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   // Reach stays 30 as before, so a mine is still caught where it always was —
   // the sphere shrinks and the spikes take up the difference.
   const mineTemplate = (() => {
-    const core = MeshBuilder.CreateSphere("mineCore", { diameter: 38, segments: 10 }, scene);
+    const core = MeshBuilder.CreateSphere("mineCore", { diameter: 26, segments: 10 }, scene);
     const parts = [core];
     // Six axes plus the eight cube diagonals: enough to read as a mine from any
     // angle without turning into a pincushion.
@@ -255,7 +255,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       const dir = new Vector3(d[0], d[1], d[2]).normalize();
       const spike = MeshBuilder.CreateCylinder(
         "mineSpike",
-        { diameterTop: 0, diameterBottom: 9, height: 13, tessellation: 6 },
+        { diameterTop: 0, diameterBottom: 8, height: 22, tessellation: 6 },
         scene,
       );
       // A cylinder points along +Y; turn it to face outward. Straight up needs
@@ -269,7 +269,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
           : dot < -0.9999
             ? Quaternion.RotationAxis(Vector3.Right(), Math.PI)
             : Quaternion.RotationAxis(Vector3.Cross(up, dir).normalize(), Math.acos(dot));
-      spike.position = dir.scale(23.5); // 23.5 + half of 13 = 30 at the tip
+      spike.position = dir.scale(19); // 19 + half of 22 = 30 at the tip, as before
       parts.push(spike);
     }
     const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, false)!;

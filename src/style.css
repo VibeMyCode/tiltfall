@@ -777,3 +777,13 @@ body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px);
 }
 .reset-link:hover { color: #ff9d92; border-color: #7c4a4a; }
 .reset-link.hidden { display: none; }
+
+/* The results card doubles as the shop before a run, so the parts that
+   describe a run that did not happen are hidden rather than faked. */
+body.menu-mode .new-best,
+body.menu-mode .results-card h2,
+body.menu-mode .hero-score,
+body.menu-mode .hero-sub,
+body.menu-mode .chip-row,
+body.menu-mode #res-share { display: none; }
+body.menu-mode .results-scroll { padding-top: 26px; }

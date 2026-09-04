@@ -55,6 +55,7 @@ export interface UI {
   hideResults: () => void;
   setRank: (r: SubmitResult | null) => void;
   showTitle: () => void;
+  showMenu: (r: ResultsModel) => void;
 }
 
 export interface UIHandlers {
@@ -64,6 +65,7 @@ export interface UIHandlers {
   onActivate: (id: BoosterId) => void;
   onJump: () => void;
   onStart: () => void; // title screen → first run (also unlocks audio)
+  onShop: () => void; // title screen → the shop, before any run
   onHome: () => void; // leave the results card and go back to the title screen
   mute: { get: () => boolean; toggle: () => boolean };
   best: () => { score: number; depth: number };
@@ -82,6 +84,11 @@ const TG_ICON =
 const X_ICON =
   '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
   '<path d="M17.5 3h3.2l-7 8 8.2 10h-6.4l-5-6.1L4.7 21H1.5l7.5-8.6L1.2 3h6.6l4.5 5.6zM16.4 19.2h1.8L7.7 4.7H5.8z" fill="currentColor"/></svg>';
+
+const SHOP_ICON =
+  '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M4.2 8h15.6l-1.3 11.2a1.6 1.6 0 0 1-1.6 1.4H7.1a1.6 1.6 0 0 1-1.6-1.4z" fill="currentColor" opacity=".55"/>' +
+  '<path d="M8.6 10V7.2a3.4 3.4 0 0 1 6.8 0V10" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>';
 
 const HOME_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
@@ -131,6 +138,7 @@ export function createUI(h: UIHandlers): UI {
       <p class="tagline">Steer the falling ball. Smash everything. Dodge the mines.</p>
       <div class="account" id="title-account"></div>
       <button id="title-play">PLAY</button>
+      <button id="title-shop" class="title-board">${SHOP_ICON}<span>SHOP &amp; LEVEL</span></button>
       <button id="title-board" class="title-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
       <div class="title-hint" id="title-hint"></div>
     </div>`;
@@ -168,11 +176,12 @@ export function createUI(h: UIHandlers): UI {
     });
   }
   renderAccount();
-  title.querySelector<HTMLButtonElement>("#title-play")!.addEventListener("click", () => {
+  function startGame(): void {
     title.classList.add("gone");
     document.body.classList.remove("titlescreen");
     h.onStart();
-  });
+  }
+  title.querySelector<HTMLButtonElement>("#title-play")!.addEventListener("click", startGame);
 
   const bar = document.createElement("div");
   bar.className = "booster-bar";
@@ -249,8 +258,13 @@ export function createUI(h: UIHandlers): UI {
     if (e.target === boardView) closeBoard();
   });
   title.querySelector<HTMLButtonElement>("#title-board")!.addEventListener("click", openBoard);
+  title.querySelector<HTMLButtonElement>("#title-shop")!.addEventListener("click", h.onShop);
 
-  results.querySelector<HTMLButtonElement>("#res-replay")!.addEventListener("click", h.onReplay);
+  // The same card serves as the shop before a run, so the primary action is
+  // whichever one makes sense: start the game, or drop again.
+  let menuMode = false;
+  const replayBtn = results.querySelector<HTMLButtonElement>("#res-replay")!;
+  replayBtn.addEventListener("click", () => (menuMode ? startGame() : h.onReplay()));
   results.querySelector<HTMLButtonElement>("#res-board")!.addEventListener("click", openBoard);
   results.querySelector<HTMLButtonElement>("#res-home")!.addEventListener("click", h.onHome);
   // SHARE opens a picker rather than committing to one destination, because
@@ -509,6 +523,20 @@ export function createUI(h: UIHandlers): UI {
       void biomeBanner.offsetWidth; // restart the animation
       biomeBanner.classList.add("show");
     },
+    // Opened from the title screen: everything the results card carries EXCEPT
+    // the run that did not happen — level, skins, shop, daily tasks.
+    showMenu(r) {
+      model = r;
+      menuMode = true;
+      replayBtn.textContent = "PLAY";
+      // The title has to step aside, or the two cards stack and neither reads.
+      // The back arrow brings it back through onHome -> showTitle.
+      title.classList.add("gone");
+      document.body.classList.remove("titlescreen");
+      document.body.classList.add("menu-mode", "gameover");
+      renderPanels();
+      results.classList.remove("hidden");
+    },
     showTitle() {
       renderAccount();
       title.classList.remove("gone");
@@ -519,6 +547,9 @@ export function createUI(h: UIHandlers): UI {
       paintRank();
     },
     showResults(r) {
+      menuMode = false;
+      replayBtn.textContent = "DROP AGAIN";
+      document.body.classList.remove("menu-mode");
       model = r;
       el("res-score").textContent = String(r.score);
       el("res-depth").textContent = String(r.depth);
@@ -534,6 +565,8 @@ export function createUI(h: UIHandlers): UI {
     hideResults() {
       closeBoard();
       closeShare();
+      menuMode = false;
+      document.body.classList.remove("menu-mode");
       results.classList.add("hidden");
       document.body.classList.remove("gameover");
       model = null;

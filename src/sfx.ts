@@ -68,7 +68,17 @@ function tone(
 
 function noise(
   dur: number,
-  opts: { gain?: number; filter?: number; sweepTo?: number; q?: number; delay?: number } = {},
+  opts: {
+    gain?: number;
+    filter?: number;
+    sweepTo?: number;
+    q?: number;
+    delay?: number;
+    // Bandpass by default, which suits a smash. An explosion needs the other
+    // two: a highpass for the crack and a lowpass for the body — a band keeps
+    // only the middle, and the middle alone is a blop.
+    type?: BiquadFilterType;
+  } = {},
 ): void {
   if (!ctx || !master || muted) return;
   const t0 = ctx.currentTime + (opts.delay ?? 0);
@@ -79,7 +89,7 @@ function noise(
   const src = ctx.createBufferSource();
   src.buffer = buf;
   const bp = ctx.createBiquadFilter();
-  bp.type = "bandpass";
+  bp.type = opts.type ?? "bandpass";
   bp.frequency.setValueAtTime(opts.filter ?? 1200, t0);
   if (opts.sweepTo) bp.frequency.exponentialRampToValueAtTime(Math.max(60, opts.sweepTo), t0 + dur);
   bp.Q.value = opts.q ?? 1.1;
@@ -115,14 +125,18 @@ export const SFX = {
     tone(340, 0.18, { type: "sine", gain: 0.18, sweepTo: 900 });
   },
   mine: () => {
-    // Death: deep boom + long debris hiss.
-    noise(0.9, { gain: 0.5, filter: 900, sweepTo: 60, q: 0.6 });
-    tone(90, 0.8, { type: "sine", gain: 0.35, sweepTo: 24 });
-    tone(200, 0.5, { type: "sawtooth", gain: 0.14, sweepTo: 40, delay: 0.04 });
+    // Death. An explosion is three things at once: a bright crack, a body that
+    // falls away underneath it, and a low boom that outlasts both.
+    noise(0.14, { gain: 0.55, filter: 7000, sweepTo: 2400, q: 0.4, type: "highpass" });
+    noise(0.85, { gain: 0.5, filter: 2400, sweepTo: 90, q: 0.9, type: "lowpass" });
+    tone(85, 0.9, { type: "sine", gain: 0.4, sweepTo: 22 });
+    tone(140, 0.35, { type: "sawtooth", gain: 0.16, sweepTo: 45, delay: 0.02 });
   },
   mineBlast: () => {
-    noise(0.4, { gain: 0.3, filter: 800, sweepTo: 120, q: 0.7 });
-    tone(110, 0.35, { type: "sine", gain: 0.2, sweepTo: 40 });
+    // A mine taken out by a blast: the same shape, shorter and further off.
+    noise(0.09, { gain: 0.34, filter: 6000, sweepTo: 2200, q: 0.4, type: "highpass" });
+    noise(0.45, { gain: 0.36, filter: 1800, sweepTo: 110, q: 0.9, type: "lowpass" });
+    tone(105, 0.4, { type: "sine", gain: 0.22, sweepTo: 34 });
   },
   booster: () => {
     [0, 0.06, 0.12].forEach((d, i) => tone(520 + i * 260, 0.14, { type: "triangle", gain: 0.16, delay: d }));
