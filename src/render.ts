@@ -16,7 +16,7 @@ import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPi
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CONFIG } from "./config.js";
 import type { BlockDef, BlockType } from "./levelgen.js";
 import type { SimEvent } from "./sim.js";
@@ -232,6 +232,52 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     }),
   };
 
+  // A MINE is built once and cloned. Spiky is fifteen meshes a mine if built
+  // naively, and there are dozens on screen deep down; merged, a mine costs the
+  // one draw the plain sphere used to.
+  // Reach stays 30 as before, so a mine is still caught where it always was —
+  // the sphere shrinks and the spikes take up the difference.
+  const mineTemplate = (() => {
+    const core = MeshBuilder.CreateSphere("mineCore", { diameter: 38, segments: 10 }, scene);
+    const parts = [core];
+    // Six axes plus the eight cube diagonals: enough to read as a mine from any
+    // angle without turning into a pincushion.
+    const dirs: [number, number, number][] = [];
+    for (const a of [-1, 0, 1]) {
+      for (const b of [-1, 0, 1]) {
+        for (const c of [-1, 0, 1]) {
+          const nz = Math.abs(a) + Math.abs(b) + Math.abs(c);
+          if (nz === 1 || nz === 3) dirs.push([a, b, c]);
+        }
+      }
+    }
+    for (const d of dirs) {
+      const dir = new Vector3(d[0], d[1], d[2]).normalize();
+      const spike = MeshBuilder.CreateCylinder(
+        "mineSpike",
+        { diameterTop: 0, diameterBottom: 9, height: 13, tessellation: 6 },
+        scene,
+      );
+      // A cylinder points along +Y; turn it to face outward. Straight up needs
+      // no turn, straight down needs a flip — the cross product is zero for
+      // both and cannot be normalised.
+      const up = Vector3.Up();
+      const dot = Vector3.Dot(up, dir);
+      spike.rotationQuaternion =
+        dot > 0.9999
+          ? Quaternion.Identity()
+          : dot < -0.9999
+            ? Quaternion.RotationAxis(Vector3.Right(), Math.PI)
+            : Quaternion.RotationAxis(Vector3.Cross(up, dir).normalize(), Math.acos(dot));
+      spike.position = dir.scale(23.5); // 23.5 + half of 13 = 30 at the tip
+      parts.push(spike);
+    }
+    const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, false)!;
+    merged.setEnabled(false); // template only
+    merged.isPickable = false;
+    return merged;
+  })();
+
   const blockInfo = new Map<number, BlockDef>();
   const blockMeshes = new Map<number, Mesh>();
 
@@ -239,8 +285,9 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     blockInfo.set(b.id, b);
     let mesh: Mesh;
     if (b.type === "mine") {
-      // A MINE must read as lethal: small dark sphere with a glowing red core.
-      mesh = MeshBuilder.CreateSphere(`b${b.id}`, { diameter: 60, segments: 10 }, scene);
+      // A MINE must read as lethal: a spiked ball, not a berry.
+      mesh = mineTemplate.clone(`b${b.id}`);
+      mesh.setEnabled(true);
       mesh.material = MATS.mine;
       mesh.position = toLocal(b.cx, b.cy, b.cz);
     } else {
