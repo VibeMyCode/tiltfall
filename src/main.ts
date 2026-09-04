@@ -9,6 +9,7 @@ import {
   levelCost,
   nextPerkText,
   perksAt,
+  rerollKeepingClaimed,
   rollDaily,
   trackBoosterUse,
   trackEvents,
@@ -452,13 +453,28 @@ const resultsModel = (): ResultsModel => ({
       },
     },
     daily: {
-      rerollStars: starsAvailable() ? PRODUCTS.daily_reroll.stars : null,
-      // A reroll replaces today's set, and the progress with it — the point of
-      // paying is to be rid of the tasks you were given, not to keep them.
+      // Nothing to sell once every task has been cashed in — see below.
+      rerollStars:
+        starsAvailable() && !dailyTasks.every((t) => daily.claimed[t.id])
+          ? PRODUCTS.daily_reroll.stars
+          : null,
+      // Replaces only what has NOT been claimed. Keeping the claimed ones in
+      // place is what stops a reroll from being a way to collect the same
+      // rewards twice: at 1000 a task that would be 5000 coins for ten Stars,
+      // repeatable — a coin faucet priced in Stars, which is exactly the thing
+      // we decided not to sell.
       async reroll() {
         if (!(await buy("daily_reroll"))) return false;
-        daily = { ...freshDaily(todayStr), roll: (daily.roll ?? 0) + 1 };
-        dailyTasks = rollDaily(todayStr, daily.roll);
+        const roll = (daily.roll ?? 0) + 1;
+        const kept = dailyTasks.filter((t) => daily.claimed[t.id]);
+        dailyTasks = rerollKeepingClaimed(dailyTasks, daily.claimed, todayStr, roll);
+        daily = {
+          date: todayStr,
+          roll,
+          allClaimed: daily.allClaimed,
+          claimed: Object.fromEntries(kept.map((t) => [t.id, true])),
+          progress: Object.fromEntries(kept.map((t) => [t.id, daily.progress[t.id] ?? 0])),
+        };
         save("tf.daily", daily);
         return true;
       },

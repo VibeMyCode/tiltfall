@@ -143,8 +143,11 @@ export const CONFIG = {
 
   // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
   // Goals are multi-run by design (owner: 1-3 runs cleared everything).
-  dailyRewardEach: 90,
-  dailyRewardAll: 180,
+  // A daily set is several runs' worth of chores, so its reward has to be worth
+  // a run: 3x1000 plus the 2000 for finishing all of them is about 5000, or
+  // most of one good run. At 90 it was noise beside a 6000-point run.
+  dailyRewardEach: 1000,
+  dailyRewardAll: 2000,
 
   // Unbreakables (§4.1). Bumpers must FEEL like launchers; spikes stop the
   // ball dead (owner).
