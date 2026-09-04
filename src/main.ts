@@ -352,6 +352,25 @@ function onFinish(): void {
   reportRun();
   // The death scene plays first (ball shatters, slow beat) — the overlay
   // fades in after it, never over it (owner design).
+  //
+  // Where there is somebody to charge, the offer to carry on comes BEFORE the
+  // results card and a little sooner, because it lives on the freshness of the
+  // loss. Declining falls through to the card as usual.
+  if (starsAvailable()) {
+    const t = runTotal();
+    resultsTimer = window.setTimeout(
+      () =>
+        ui.askRevive({
+          stars: reviveStars(segments.length + 1),
+          score: t.score,
+          depth: t.depth,
+          buy: tryContinue,
+          decline: showResultsNow,
+        }),
+      900,
+    );
+    return;
+  }
   resultsTimer = window.setTimeout(showResultsNow, 1500);
 }
 
@@ -363,10 +382,6 @@ const resultsModel = (): ResultsModel => ({
     score: runTotal().score,
     depth: runTotal().depth,
     broken: runTotal().blocks,
-    // Offered only inside Telegram, and only while a run is actually over.
-    continue: starsAvailable()
-      ? { stars: reviveStars(segments.length + 1), buy: tryContinue }
-      : null,
     maxCombo: sim.maxCombo,
     bestScore: best.score,
     bestDepth: best.depth,

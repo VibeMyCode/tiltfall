@@ -788,12 +788,58 @@ body.menu-mode .chip-row,
 body.menu-mode #res-share { display: none; }
 body.menu-mode .results-scroll { padding-top: 26px; }
 
+/* The revive offer sits over the tower, low on the screen and near the thumb,
+   with the run it is offering to save still visible above it. */
+.revive-ask {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 16px max(28px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #0000 30%, #060a16cc 100%);
+  animation: overlay-in 0.25s ease;
+}
+.revive-ask.hidden { display: none; }
+.revive-card {
+  width: min(380px, 100%);
+  padding: 16px;
+  background: #141c30;
+  border: 1px solid #35446b;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px #0009;
+  text-align: center;
+}
+.revive-lost {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: #8fa2c9;
+  margin-bottom: 12px;
+}
+.revive-lost b { color: #ffe9a8; font-size: 15px; font-variant-numeric: tabular-nums; }
+.revive-no {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 11px;
+  background: none;
+  border: none;
+  color: #6d7ea3;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+}
+.revive-no:hover { color: #c9d6f0; }
+
 /* Continuing a run costs money, so it looks like the exceptional action it is:
    warm, prominent, and directly under the score it is offering to save. */
 .revive {
   display: block;
   width: 100%;
-  margin: 14px 0 2px;
+  margin: 0;
   padding: 13px;
   background: linear-gradient(180deg, #ffd98a, #f5b73c);
   border: none;

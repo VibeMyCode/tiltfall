@@ -24,9 +24,6 @@ export interface ResultsModel {
   bestDepth: number;
   newBest: boolean;
   share: { telegram: (() => void) | null; x: () => void };
-  // Paying to carry the run on. Null outside Telegram, where there is nobody
-  // to charge.
-  continue: { stars: number; buy: () => Promise<boolean> } | null;
   shop: ShopModel;
   // Live getters — the panel re-renders after purchases and must never show
   // a stale snapshot (owner bug: LEVEL stayed at 1 after buying).
@@ -59,6 +56,18 @@ export interface UI {
   setRank: (r: SubmitResult | null) => void;
   showTitle: () => void;
   showMenu: (r: ResultsModel) => void;
+  // The offer to carry on, shown at the moment of death rather than on the
+  // results card: it converts on the freshness of the loss, and a paid button
+  // living permanently in the menu reads as nagging.
+  askRevive: (o: ReviveOffer) => void;
+}
+
+export interface ReviveOffer {
+  stars: number;
+  score: number;
+  depth: number;
+  buy: () => Promise<boolean>;
+  decline: () => void;
 }
 
 export interface UIHandlers {
@@ -222,7 +231,6 @@ export function createUI(h: UIHandlers): UI {
           <span class="chip">▦ <b id="res-broken">0</b><i>blocks</i></span>
           <span class="chip">× <b id="res-combo">1</b><i>combo</i></span>
         </div>
-        <button class="revive hidden" id="res-continue"></button>
         <button class="board-open" id="res-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
         <div class="bank-line">BANK <b class="bank" id="shop-bank">0</b></div>
         <div class="level-box" id="level-box"></div>
@@ -240,6 +248,40 @@ export function createUI(h: UIHandlers): UI {
       </div>
     </div>`;
   document.body.appendChild(results);
+
+  // Shown over the tower, before the results card, so the offer lands while the
+  // run just lost is still on screen. No timer: pressure would buy a few more
+  // percent and cost more than that.
+  const revive = document.createElement("div");
+  revive.className = "revive-ask hidden";
+  revive.innerHTML = `
+    <div class="revive-card">
+      <div class="revive-lost">YOU REACHED <b id="revive-depth">0</b> DEEP FOR <b id="revive-score">0</b></div>
+      <button class="revive" id="revive-buy"></button>
+      <button class="revive-no" id="revive-no">GAME OVER</button>
+    </div>`;
+  document.body.appendChild(revive);
+  const reviveBuy = revive.querySelector<HTMLButtonElement>("#revive-buy")!;
+  let offer: ReviveOffer | null = null;
+  const closeRevive = (): void => {
+    revive.classList.add("hidden");
+    reviveBuy.disabled = false;
+  };
+  reviveBuy.addEventListener("click", () => {
+    if (!offer || reviveBuy.disabled) return;
+    // Locked while Telegram has the invoice open: a second tap buys twice.
+    reviveBuy.disabled = true;
+    void offer.buy().then((paid) => {
+      if (paid) closeRevive();
+      else reviveBuy.disabled = false;
+    });
+  });
+  revive.querySelector<HTMLButtonElement>("#revive-no")!.addEventListener("click", () => {
+    const declined = offer;
+    closeRevive();
+    declined?.decline();
+  });
+
 
   // The board lives in its own overlay rather than inline: on the results card
   // it only added scroll height and still ended up below the fold.
@@ -297,18 +339,6 @@ export function createUI(h: UIHandlers): UI {
   sharePick.querySelector<HTMLButtonElement>("#share-x")!.addEventListener("click", () => {
     closeShare();
     model?.share?.x();
-  });
-
-  // Continuing costs real money, so the button says the price and locks itself
-  // while Telegram has the invoice open — a second tap would buy twice.
-  const contBtn = results.querySelector<HTMLButtonElement>("#res-continue")!;
-  contBtn.addEventListener("click", () => {
-    const c = model?.continue;
-    if (!c || contBtn.disabled) return;
-    contBtn.disabled = true;
-    void c.buy().finally(() => {
-      contBtn.disabled = false;
-    });
   });
 
   const shareBtn = results.querySelector<HTMLButtonElement>("#res-share")!;
@@ -541,6 +571,13 @@ export function createUI(h: UIHandlers): UI {
     },
     // Opened from the title screen: everything the results card carries EXCEPT
     // the run that did not happen — level, skins, shop, daily tasks.
+    askRevive(o) {
+      offer = o;
+      el("revive-depth").textContent = String(o.depth);
+      el("revive-score").textContent = String(o.score);
+      reviveBuy.innerHTML = `CONTINUE RUN <b>${o.stars} ★</b>`;
+      revive.classList.remove("hidden");
+    },
     showMenu(r) {
       model = r;
       menuMode = true;
@@ -574,13 +611,12 @@ export function createUI(h: UIHandlers): UI {
       el("res-best").textContent = `${r.bestScore} · depth ${r.bestDepth}`;
       el("res-newbest").classList.toggle("hidden", !r.newBest);
 
-      contBtn.classList.toggle("hidden", !r.continue);
-      if (r.continue) contBtn.innerHTML = `CONTINUE RUN <b>${r.continue.stars} ★</b>`;
       renderPanels();
       document.body.classList.add("gameover"); // hides jump/booster bar
       results.classList.remove("hidden");
     },
     hideResults() {
+      closeRevive();
       closeBoard();
       closeShare();
       menuMode = false;
