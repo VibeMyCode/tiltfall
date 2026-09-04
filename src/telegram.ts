@@ -119,7 +119,7 @@ export function cloudLoad(key: string): Promise<string | null> {
   });
 }
 
-const brag = (score: number, depth: number) => `TILTFALL: ${score} points, depth ${depth}. Beat me!`;
+const brag = (score: number, depth: number) => `TILTFALL: ${score} points, depth ${depth}.\nBeat me!`;
 
 // Share into a Telegram chat — the link is the Mini App, so a tap lands the
 // reader in the game rather than in a chat with the bot.
@@ -133,16 +133,16 @@ export function shareTelegram(score: number, depth: number, appUrl: string): voi
 // Share to X. The intent opens the composer already filled in — the reader
 // only has to press Post.
 //
-// The Telegram link goes in `url` because that is the one X turns into the
-// preview card, and Telegram is the channel that matters: a tap there lands in
-// the Mini App with an account, a leaderboard and saved progress. The browser
-// link rides along in the text as the fallback for readers without Telegram.
+// One link, the Mini App. A browser link was offered alongside it and the post
+// came out nonsense: X appends `url` AFTER the text, so the label written for
+// the web link ended up sitting above BOTH, and the link that actually matters
+// read as an afterthought under a heading meant for the other one.
+//
 // Inside Telegram the intent has to be handed to openLink, or it would try to
 // open inside the Mini App itself.
-export function shareX(score: number, depth: number, appUrl: string, webUrl: string): void {
-  const text = `${brag(score, depth)}\n\nIn a browser: ${webUrl}`;
+export function shareX(score: number, depth: number, appUrl: string): void {
   const url =
-    `https://x.com/intent/post?text=${encodeURIComponent(text)}` +
+    `https://x.com/intent/post?text=${encodeURIComponent(brag(score, depth))}` +
     `&url=${encodeURIComponent(appUrl)}`;
   const app = tg();
   if (inTelegram() && app?.openLink) app.openLink(url);

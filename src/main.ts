@@ -330,7 +330,7 @@ const resultsModel = (): ResultsModel => ({
     // no longer Telegram-only.
     share: {
       telegram: inTelegram() ? () => shareTelegram(sim.score, sim.depth, CONFIG.botUrl) : null,
-      x: () => shareX(sim.score, sim.depth, CONFIG.botUrl, CONFIG.webUrl),
+      x: () => shareX(sim.score, sim.depth, CONFIG.botUrl),
     },
     shop: {
       get bank() {

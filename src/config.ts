@@ -140,9 +140,6 @@ export const CONFIG = {
   // Telegram: direct Mini App link used by the share button — opens the game
   // itself, not the bot chat (which would cost the recipient an extra tap).
   botUrl: "https://t.me/tiltfall_bot/play",
-  // Shared to X instead of the t.me link: X builds the preview picture from
-  // this page's own card, which t.me cannot give it.
-  webUrl: "https://tiltfall.vercel.app/",
 
   // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
   // Goals are multi-run by design (owner: 1-3 runs cleared everything).
