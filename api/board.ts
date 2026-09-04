@@ -8,29 +8,12 @@
 //    refused until a proof arrives, and one at or below it is clamped to that
 //    best - so the lifetime total can only grow as fast as you have actually
 //    proven you can play.
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
-import { createHmac, timingSafeEqual } from "node:crypto";
 // Explicit .js: Vercel compiles this to ESM and Node does not guess extensions
 // for relative imports. vercel dev resolves it either way, which is how the
 // deployed function came to crash on import while local testing stayed green.
+import { verifyInitData } from "./_initdata.js";
+import { db, rateLimit } from "./_store.js";
 import { replayScore, type RunProof } from "../src/replay.js";
-
-// Lazy: module bodies run at build time too, and Redis.fromEnv() throws when
-// the credentials are not there yet. Nothing here should need a database to be
-// importable — the tests below import this file precisely to avoid one.
-let _redis: Redis | null = null;
-const db = (): Redis => (_redis ??= Redis.fromEnv());
-
-let _limiter: Ratelimit | null = null;
-const rateLimit = (): Ratelimit =>
-  (_limiter ??= new Ratelimit({
-    redis: db(),
-    // A run takes tens of seconds, so this is generous for a player and still
-    // caps a script hammering the endpoint.
-    limiter: Ratelimit.slidingWindow(20, "60 s"),
-    prefix: "rl",
-  }));
 
 const BEST = "lb:best"; // ZSET uid -> best verified run
 const TOTAL = "lb:total"; // ZSET uid -> lifetime points
@@ -54,51 +37,6 @@ const json = (body: unknown, init?: ResponseInit) =>
     ...init,
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
   });
-
-// --- identity ---------------------------------------------------------------
-
-interface TgUser {
-  id: number;
-  first_name?: string;
-  username?: string;
-}
-
-// Telegram signs initData with a key derived from the bot token. Verifying it
-// is the only thing standing between the board and anyone claiming any id.
-export function verifyInitData(initData: string): TgUser | null {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || typeof initData !== "string" || initData.length > 4096) return null;
-
-  const params = new URLSearchParams(initData);
-  const hash = params.get("hash");
-  if (!hash) return null;
-  params.delete("hash");
-
-  // Telegram signs the fields sorted by key, one "k=v" per line.
-  const check = [...params.entries()]
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join("\n");
-
-  const secret = createHmac("sha256", "WebAppData").update(token).digest();
-  const mine = createHmac("sha256", secret).update(check).digest();
-  // Buffer.from(..., "hex") silently drops anything that is not hex rather than
-  // throwing, so a short or malformed hash has to be rejected by shape first.
-  if (!/^[0-9a-f]{64}$/i.test(hash)) return null;
-  if (!timingSafeEqual(mine, Buffer.from(hash, "hex"))) return null;
-
-  // A signature stays valid forever, so freshness is what stops a captured
-  // initData being replayed months later.
-  const authDate = Number(params.get("auth_date"));
-  if (!isFinite(authDate) || Date.now() / 1000 - authDate > 86_400) return null;
-
-  try {
-    const u = JSON.parse(params.get("user") ?? "null") as TgUser | null;
-    return u && typeof u.id === "number" ? u : null;
-  } catch {
-    return null;
-  }
-}
 
 // --- reading ----------------------------------------------------------------
 

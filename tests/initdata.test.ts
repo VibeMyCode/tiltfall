@@ -30,7 +30,7 @@ let verifyInitData: (s: string) => { id: number; first_name?: string } | null;
 
 beforeAll(async () => {
   process.env.TELEGRAM_BOT_TOKEN = TOKEN;
-  ({ verifyInitData } = await import("../api/board"));
+  ({ verifyInitData } = await import("../api/_initdata"));
 });
 
 describe("initData verification", () => {
