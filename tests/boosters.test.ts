@@ -123,12 +123,14 @@ describe("meta", () => {
     expect(perksAt(6).boosters).toContain("heavy");
     expect(perksAt(6).boosters).not.toContain("quake");
     expect(perksAt(14).boosters).toContain("quake");
-    // Every booster becomes reachable, and pricier ones unlock later.
+    // Every booster becomes reachable, and pricier ones unlock later. Equal
+    // prices are allowed: the property is that the order never goes DOWN, and
+    // two boosters of the same worth may sit at the same price.
     const order = CONFIG.levelPerks.filter((r) => r.booster);
     for (let i = 1; i < order.length; i++) {
       const prev = CONFIG.boosters[order[i - 1].booster as keyof typeof CONFIG.boosters].price;
       const cur = CONFIG.boosters[order[i].booster as keyof typeof CONFIG.boosters].price;
-      expect(cur).toBeGreaterThan(prev);
+      expect(cur).toBeGreaterThanOrEqual(prev);
     }
     expect(nextPerkText(4)).toMatch(/shield/i);
   });

@@ -13,6 +13,18 @@ export interface Biome {
   ambient: number; // light multiplier — deep biomes must stay READABLE (owner)
 }
 
+// Block colours that do NOT follow the biome: these are what say "bomb",
+// "launcher", "spike", "mine", and they have to stay recognisable in every
+// layer. MAGMA once tinted its glass to within 0.16 of the bomb amber and the
+// two became the same block — see tests/palette.test.ts, which now keeps every
+// palette away from these.
+export const FIXED_BLOCK_RGB: Record<string, RGB> = {
+  bomb: [1.0, 0.62, 0.12],
+  bumper: [0.1, 1.0, 0.45],
+  spike: [0.85, 0.12, 0.18],
+  mine: [0.9, 0.1, 0.12],
+};
+
 export const BIOMES: Biome[] = [
   {
     name: "GLACIER",
@@ -27,7 +39,10 @@ export const BIOMES: Biome[] = [
     name: "VERDANT",
     sky: [0.06, 0.13, 0.1],
     wall: [0.28, 0.52, 0.4],
-    glass: [0.4, 1.0, 0.65],
+    // Was [0.4, 1.0, 0.65], only 0.36 from the bumper's green — the same clash
+    // MAGMA had with the bomb, just one biome later. Mint reads as this layer
+    // without competing with the launcher.
+    glass: [0.35, 0.92, 0.88],
     stone: [0.52, 0.44, 0.3],
     fogNear: 1.0,
     ambient: 0.95,
@@ -36,7 +51,12 @@ export const BIOMES: Biome[] = [
     name: "MAGMA",
     sky: [0.2, 0.08, 0.06],
     wall: [0.62, 0.32, 0.22],
-    glass: [1.0, 0.62, 0.28],
+    // Was [1.0, 0.62, 0.28] — 0.16 away from the bomb's amber, which made the
+    // two indistinguishable and left players hunting for a target mark on
+    // blocks that were never bombs. Every other biome sits 0.89+ away; this
+    // one now does too. The layer still reads hot from its sky, walls and
+    // stone.
+    glass: [0.45, 0.88, 1.0],
     stone: [0.55, 0.34, 0.24],
     fogNear: 1.0,
     ambient: 1.0, // was a cave; readability now comes from the sun, not from more light

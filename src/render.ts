@@ -21,7 +21,7 @@ import { CONFIG } from "./config.js";
 import type { BlockDef, BlockType } from "./levelgen.js";
 import type { SimEvent } from "./sim.js";
 import { SKINS, drawSkin } from "./skins.js";
-import { paletteAt } from "./biomes.js";
+import { FIXED_BLOCK_RGB, paletteAt } from "./biomes.js";
 
 interface Shard {
   mesh: Mesh;
@@ -103,13 +103,13 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   scene.activeCamera = camera;
 
   const glow = new GlowLayer("glow", scene);
-  glow.intensity = 0.45; // screen-space glow halos leak over occluders — keep modest
+  glow.intensity = 0.28; // screen-space glow halos leak over occluders — keep modest
   const pipeline = new DefaultRenderingPipeline("pp", false, scene, [camera]);
   // Bloom sits on top of the glow layer, so the two stack. Threshold keeps it
   // to genuine highlights instead of veiling the whole frame.
   pipeline.bloomEnabled = true;
-  pipeline.bloomThreshold = 0.85;
-  pipeline.bloomWeight = 0.15;
+  pipeline.bloomThreshold = 0.9;
+  pipeline.bloomWeight = 0.08;
   pipeline.fxaaEnabled = true;
 
   const tower = new TransformNode("tower", scene);
@@ -148,10 +148,12 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     glass: makeMaterial("mGlass", [0.3, 0.75, 0.95], 0.25, 0.62),
     // Stone must read as STONE (owner): matte earthy brown, zero glow.
     stone: makeMaterial("mStone", [0.42, 0.33, 0.24], 0),
-    bomb: makeMaterial("mBomb", [1.0, 0.62, 0.12], 0.7),
-    bumper: makeMaterial("mBumper", [0.1, 1.0, 0.45], 0.85), // must scream "launcher"
-    spike: makeMaterial("mSpike", [0.85, 0.12, 0.18], 0.5),
-    mine: makeMaterial("mMine", [0.9, 0.1, 0.12], 0.9), // pulsing danger red
+    // Emissive kept low enough that the glow layer cannot bleed over the mark
+    // drawn on the face — these two were the brightest things in the scene.
+    bomb: makeMaterial("mBomb", FIXED_BLOCK_RGB.bomb, 0.35),
+    bumper: makeMaterial("mBumper", FIXED_BLOCK_RGB.bumper, 0.4), // must scream "launcher"
+    spike: makeMaterial("mSpike", FIXED_BLOCK_RGB.spike, 0.5),
+    mine: makeMaterial("mMine", FIXED_BLOCK_RGB.mine, 0.9), // pulsing danger red
   };
   const glassShardMat = makeMaterial("mGlassShard", [0.55, 0.85, 1.0], 0.5, 0.75);
   glassShardMat.backFaceCulling = false;
