@@ -210,7 +210,10 @@ function playSfx(events: SimEvent[]): void {
       SFX.mineBlast();
       haptic.boom();
     }
-    else if (e.kind === "shield") SFX.shield();
+    else if (e.kind === "shield") {
+      SFX.shield();
+      haptic.boom(); // a mine went off next to you; it should be felt
+    }
     else if (e.kind === "bumper") SFX.bumper();
     else if (e.kind === "spike") SFX.spike();
     else if (e.kind === "break" && sfxBudget > 0) {
