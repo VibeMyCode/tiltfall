@@ -74,6 +74,18 @@ export async function credit(
 }
 
 /**
+ * Consumes n paid continues at once, when a submitted run turns out to have
+ * been carried on that many times. Refuses rather than going negative.
+ */
+export async function spendRevives(uid: string, n: number): Promise<boolean> {
+  if (n <= 0) return true;
+  const left = await db().hincrby(wallet(uid), "revives", -n);
+  if (left >= 0) return true;
+  await db().hincrby(wallet(uid), "revives", n);
+  return false;
+}
+
+/**
  * Consumes one unspent credit. Returns false if there was none, so a caller
  * cannot spend what was never bought.
  */

@@ -24,6 +24,9 @@ export interface ResultsModel {
   bestDepth: number;
   newBest: boolean;
   share: { telegram: (() => void) | null; x: () => void };
+  // Paying to carry the run on. Null outside Telegram, where there is nobody
+  // to charge.
+  continue: { stars: number; buy: () => Promise<boolean> } | null;
   shop: ShopModel;
   // Live getters — the panel re-renders after purchases and must never show
   // a stale snapshot (owner bug: LEVEL stayed at 1 after buying).
@@ -219,6 +222,7 @@ export function createUI(h: UIHandlers): UI {
           <span class="chip">▦ <b id="res-broken">0</b><i>blocks</i></span>
           <span class="chip">× <b id="res-combo">1</b><i>combo</i></span>
         </div>
+        <button class="revive hidden" id="res-continue"></button>
         <button class="board-open" id="res-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
         <div class="bank-line">BANK <b class="bank" id="shop-bank">0</b></div>
         <div class="level-box" id="level-box"></div>
@@ -293,6 +297,18 @@ export function createUI(h: UIHandlers): UI {
   sharePick.querySelector<HTMLButtonElement>("#share-x")!.addEventListener("click", () => {
     closeShare();
     model?.share?.x();
+  });
+
+  // Continuing costs real money, so the button says the price and locks itself
+  // while Telegram has the invoice open — a second tap would buy twice.
+  const contBtn = results.querySelector<HTMLButtonElement>("#res-continue")!;
+  contBtn.addEventListener("click", () => {
+    const c = model?.continue;
+    if (!c || contBtn.disabled) return;
+    contBtn.disabled = true;
+    void c.buy().finally(() => {
+      contBtn.disabled = false;
+    });
   });
 
   const shareBtn = results.querySelector<HTMLButtonElement>("#res-share")!;
@@ -558,6 +574,8 @@ export function createUI(h: UIHandlers): UI {
       el("res-best").textContent = `${r.bestScore} · depth ${r.bestDepth}`;
       el("res-newbest").classList.toggle("hidden", !r.newBest);
 
+      contBtn.classList.toggle("hidden", !r.continue);
+      if (r.continue) contBtn.innerHTML = `CONTINUE RUN <b>${r.continue.stars} ★</b>`;
       renderPanels();
       document.body.classList.add("gameover"); // hides jump/booster bar
       results.classList.remove("hidden");

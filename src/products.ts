@@ -49,6 +49,10 @@ export const PRODUCTS: Record<ProductId, Product> = {
   daily_reroll: { id: "daily_reroll", stars: 10, title: "New daily tasks", desc: "Reroll today's tasks" },
 };
 
-// The nth continue inside a single run, capped at the top rung.
+// The nth continue inside a single run, capped at the top rung. One function,
+// used by the button that shows the price AND by the server that charges it —
+// two copies of this ladder would eventually quote different numbers.
 export const revivePrice = (n: number): Product =>
   n <= 1 ? PRODUCTS.revive1 : n === 2 ? PRODUCTS.revive2 : PRODUCTS.revive3;
+
+export const reviveProduct = (n: number): ProductId => revivePrice(n).id;

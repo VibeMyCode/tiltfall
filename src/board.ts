@@ -65,10 +65,12 @@ export async function fetchBoard(): Promise<Board | null> {
   }
 }
 
-// `proof` is a thunk so the encoding cost is paid only when the server asks.
-export async function submitRun(report: RunReport, proof: () => RunProof): Promise<SubmitResult | null> {
+// A thunk, so the encoding cost is paid only when the server asks — and an
+// array, because a run continued with Stars is several segments and the server
+// recounts every one of them.
+export async function submitRun(report: RunReport, proofs: () => RunProof[]): Promise<SubmitResult | null> {
   let res = await post(report);
-  if (res?.needProof) res = await post({ ...report, proof: proof() });
+  if (res?.needProof) res = await post({ ...report, proofs: proofs() });
   if (!res || !res.ok) return null;
   return {
     verified: Boolean(res.verified),

@@ -1,7 +1,7 @@
 // The catalogue is the only place a price may come from, and the payload is
 // attacker-reachable: it is written by us but returns through a client.
 import { describe, expect, it } from "vitest";
-import { PRODUCTS, revivePrice } from "../src/products.js";
+import { PRODUCTS, reviveProduct, revivePrice } from "../src/products.js";
 import { parsePayload } from "../api/telegram.js";
 
 describe("catalogue", () => {
@@ -21,6 +21,14 @@ describe("catalogue", () => {
     expect(revivePrice(9).stars).toBe(revivePrice(3).stars);
     // Asking for continue number zero must not buy the cheap one.
     expect(revivePrice(0).stars).toBe(revivePrice(1).stars);
+  });
+
+  it("names the same product the price came from", () => {
+    // The button quotes revivePrice and the invoice is bought by reviveProduct.
+    // If these ever disagree, a player is shown one number and charged another.
+    for (const n of [0, 1, 2, 3, 4, 99]) {
+      expect(PRODUCTS[reviveProduct(n)].stars).toBe(revivePrice(n).stars);
+    }
   });
 });
 

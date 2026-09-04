@@ -20,7 +20,9 @@ import { SFX, initAudio, isMuted, toggleMute } from "./sfx.js";
 import { attachInput, isTouch } from "./input.js";
 import { createRenderer } from "./render.js";
 import { createUI, type ResultsModel } from "./ui.js";
-import { createRecorder, type RunRecorder } from "./replay.js";
+import { createRecorder, type RunProof, type RunRecorder } from "./replay.js";
+import { buy, reviveStars, starsAvailable } from "./pay.js";
+import { reviveProduct } from "./products.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
 import { resetBoard, submitRun } from "./board.js";
 import {
@@ -132,6 +134,19 @@ let sim: SimState = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
 // Recorded alongside every run so a ranking score can be proven rather than
 // asserted. Costs one array push per tick and nothing at all if never sent.
 let recorder: RunRecorder = createRecorder(sim.seed, simOpts().shields, simOpts().jumpMaxCharges);
+
+// A run can span several SEGMENTS: dying and paying to continue starts a fresh
+// sim, and the run is their sum. Each segment keeps its own proof, so the
+// server can still recount the whole thing rather than take the total on faith.
+// This list holds the FINISHED ones; the live sim is always added on top.
+let segments: { score: number; depth: number; blocks: number; proof: RunProof }[] = [];
+
+const runTotal = (): { score: number; depth: number; blocks: number } =>
+  segments.reduce((a, s) => ({ score: a.score + s.score, depth: a.depth + s.depth, blocks: a.blocks + s.blocks }), {
+    score: sim.score,
+    depth: sim.depth,
+    blocks: sim.broken,
+  });
 const input = attachInput(canvas, () => tryJump());
 const renderer = createRenderer(canvas, sim.blocks);
 renderer.setSkin(skin);
@@ -160,7 +175,9 @@ if (inTelegram()) {
   })();
 }
 
-const newRun = () => {
+// Starts a fresh tower. Used both to begin a run and to carry one on after a
+// paid continue — the difference is only whether the segments so far are kept.
+function startSim(): void {
   clearTimeout(resultsTimer);
   sim = createSim(Math.floor(Math.random() * 2 ** 31), simOpts());
   const o = simOpts();
@@ -169,7 +186,25 @@ const newRun = () => {
   lastBiome = biomeNameAt(0);
   renderer.setLayout(sim.blocks);
   ui.hideResults();
+}
+
+const newRun = () => {
+  segments = [];
+  startSim();
 };
+
+// Pays for one more life. The segment just played is banked as a proof and the
+// tower is replaced; score and depth carry on adding up. Returns false when the
+// purchase did not complete, in which case nothing changes and the results card
+// stays where it was.
+async function tryContinue(): Promise<boolean> {
+  const n = segments.length + 1; // which continue this is — it sets the price
+  if (!(await buy(reviveProduct(n), { reviveN: n }))) return false;
+  segments.push({ score: sim.score, depth: sim.depth, blocks: sim.broken, proof: recorder.proof() });
+  startSim();
+  started = true;
+  return true;
+}
 
 function tryActivate(id: BoosterId): void {
   if (sim.finished) return;
@@ -290,12 +325,15 @@ let lastNewBest = false;
 // there is nothing to submit and the board stays read-only.
 function reportRun(): void {
   const initData = initDataRaw();
-  if (!initData || sim.score <= 0) return;
-  const snapshot = recorder; // newRun may replace it while the request is out
-  void submitRun(
-    { initData, score: sim.score, depth: sim.depth, level, skin },
-    () => snapshot.proof(),
-  ).then((r) => ui.setRank(r));
+  const total = runTotal();
+  if (!initData || total.score <= 0) return;
+  // Snapshotted because startSim may replace both while the request is out.
+  const done = segments.slice();
+  const live = recorder;
+  void submitRun({ initData, score: total.score, depth: total.depth, level, skin }, () => [
+    ...done.map((seg) => seg.proof),
+    live.proof(),
+  ]).then((r) => ui.setRank(r));
 }
 
 function onFinish(): void {
@@ -304,8 +342,11 @@ function onFinish(): void {
   bank += sim.score;
   trackRunEnd(daily, sim.score, sim.maxCombo);
   save("tf.daily", daily);
-  lastNewBest = sim.score > best.score || sim.depth > best.depth;
-  best = { score: Math.max(best.score, sim.score), depth: Math.max(best.depth, sim.depth) };
+  // Best and the leaderboard see the WHOLE run; the bank above takes only this
+  // segment, so a continued run is not banked twice.
+  const total = runTotal();
+  lastNewBest = total.score > best.score || total.depth > best.depth;
+  best = { score: Math.max(best.score, total.score), depth: Math.max(best.depth, total.depth) };
   save("tf.bank", bank);
   save("tf.best", best);
   reportRun();
@@ -319,9 +360,13 @@ function onFinish(): void {
 // the run's. The run fields come straight off the current sim, which the menu
 // hides anyway rather than inventing zeroes for.
 const resultsModel = (): ResultsModel => ({
-    score: sim.score,
-    depth: sim.depth,
-    broken: sim.broken,
+    score: runTotal().score,
+    depth: runTotal().depth,
+    broken: runTotal().blocks,
+    // Offered only inside Telegram, and only while a run is actually over.
+    continue: starsAvailable()
+      ? { stars: reviveStars(segments.length + 1), buy: tryContinue }
+      : null,
     maxCombo: sim.maxCombo,
     bestScore: best.score,
     bestDepth: best.depth,
@@ -511,7 +556,8 @@ renderer.scene.onBeforeRenderObservable.add(() => {
     lastBiome = biomeNow;
     if (sim.depth > 0) ui.showBiome(biomeNow);
   }
-  ui.setHud(sim.tick * CONFIG.dt, sim.score, sim.combo, sim.depth, sim.shields);
+  const shown = runTotal();
+  ui.setHud(sim.tick * CONFIG.dt, shown.score, sim.combo, shown.depth, sim.shields);
   ui.setJump(
     sim.jumpCharges,
     sim.jumpMaxCharges,

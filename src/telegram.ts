@@ -19,6 +19,7 @@ interface TgWebApp {
   enableClosingConfirmation?: () => void;
   openTelegramLink?: (url: string) => void;
   openLink?: (url: string, opts?: { try_instant_view?: boolean }) => void;
+  openInvoice?: (url: string, cb: (status: "paid" | "cancelled" | "failed" | "pending") => void) => void;
   shareMessage?: (id: string, cb?: (ok: boolean) => void) => void;
   initDataUnsafe?: { user?: { id: number; first_name?: string; username?: string } };
   HapticFeedback?: TgHaptic;
@@ -60,6 +61,27 @@ export function initTelegram(): void {
 // Telegram client fills it, so outside Telegram there is nobody to identify
 // and the leaderboard simply stays read-only.
 export const initDataRaw = (): string | null => tg()?.initData || null;
+
+// Opens a Stars invoice and resolves once Telegram says what happened. Only
+// "paid" is a yes; "pending" is not, because a purchase that has not completed
+// must not hand anything over.
+export function payWithStars(link: string): Promise<boolean> {
+  const app = tg();
+  if (!app?.openInvoice) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok: boolean) => {
+      if (!done) {
+        done = true;
+        resolve(ok);
+      }
+    };
+    // A closed WebView or a client that never calls back must not leave the
+    // player staring at a dead button.
+    setTimeout(() => finish(false), 120_000);
+    attempt(() => app.openInvoice!(link, (status) => finish(status === "paid")));
+  });
+}
 
 export function playerName(): string | null {
   const u = tg()?.initDataUnsafe?.user;

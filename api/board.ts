@@ -12,13 +12,17 @@
 // for relative imports. vercel dev resolves it either way, which is how the
 // deployed function came to crash on import while local testing stayed green.
 import { verifyInitData } from "./_initdata.js";
-import { db, rateLimit } from "./_store.js";
+import { db, entitlements, rateLimit, spendRevives } from "./_store.js";
 import { replayScore, type RunProof } from "../src/replay.js";
 
 const BEST = "lb:best"; // ZSET uid -> best verified run
 const TOTAL = "lb:total"; // ZSET uid -> lifetime points
 const RUNS = "stat:runs";
 const TOP_N = 100;
+// One run cannot have been continued more times than this. The array is
+// attacker-controlled and each entry costs a full replay, so it is bounded
+// before any of that work is done.
+const MAX_SEGMENTS = 12;
 const player = (uid: string) => `p:${uid}`;
 
 interface Row {
@@ -92,7 +96,7 @@ interface SubmitBody {
   depth?: number;
   level?: number;
   skin?: string;
-  proof?: RunProof;
+  proofs?: RunProof[];
 }
 
 const num = (v: unknown, max: number) =>
@@ -144,11 +148,29 @@ export async function POST(request: Request): Promise<Response> {
   // best is 0, so the very first ranking run is verified like any other.
   let verified = 0;
   if (claimed > best) {
-    if (!body.proof) return json({ needProof: true }, { status: 200 });
-    const r = replayScore(body.proof);
-    if (!r) return json({ error: "bad proof" }, { status: 400 });
-    if (r.score !== claimed) return json({ error: "proof does not match", scored: r.score }, { status: 409 });
-    verified = r.score;
+    const proofs = Array.isArray(body.proofs) ? body.proofs.slice(0, MAX_SEGMENTS) : null;
+    if (!proofs?.length) return json({ needProof: true }, { status: 200 });
+
+    // More than one segment means the run was continued, and a continue is
+    // something you buy. Checked BEFORE replaying: without the ledger the
+    // recount would be decorative, since anyone can send a dozen segments.
+    const extra = proofs.length - 1;
+    if (extra > 0 && (await entitlements(uid)).revives < extra) {
+      return json({ error: "unpaid continues" }, { status: 402 });
+    }
+
+    let sum = 0;
+    for (const p of proofs) {
+      const r = replayScore(p);
+      if (!r) return json({ error: "bad proof" }, { status: 400 });
+      sum += r.score;
+    }
+    if (sum !== claimed) return json({ error: "proof does not match", scored: sum }, { status: 409 });
+
+    // Spent only now, when the run is actually being accepted, so a rejected
+    // submission never costs the player a continue they paid for.
+    if (!(await spendRevives(uid, extra))) return json({ error: "unpaid continues" }, { status: 402 });
+    verified = sum;
   }
 
   // Unproven runs still count toward the totals, but only up to what this

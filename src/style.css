@@ -787,3 +787,24 @@ body.menu-mode .hero-sub,
 body.menu-mode .chip-row,
 body.menu-mode #res-share { display: none; }
 body.menu-mode .results-scroll { padding-top: 26px; }
+
+/* Continuing a run costs money, so it looks like the exceptional action it is:
+   warm, prominent, and directly under the score it is offering to save. */
+.revive {
+  display: block;
+  width: 100%;
+  margin: 14px 0 2px;
+  padding: 13px;
+  background: linear-gradient(180deg, #ffd98a, #f5b73c);
+  border: none;
+  border-radius: 12px;
+  color: #2a1c00;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.revive b { font-weight: 900; }
+.revive:disabled { opacity: 0.55; cursor: default; }
+.revive.hidden { display: none; }
