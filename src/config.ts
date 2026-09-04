@@ -16,7 +16,10 @@ export const CONFIG = {
   mineCount: (tier: number) => Math.min(4, 1 + Math.floor((tier - 3) / 3)),
   // Difficulty ramp caps.
   stonePMax: 0.5,
-  spikeMaxPerTier: 3,
+  // Fixed counts, every tier (owner): the layout should promise the same
+  // furniture at any depth — what changes with depth is the mines.
+  bumpersPerTier: 3,
+  spikesPerTier: 3,
   cell: 100,
   gridN: 8,
   gridX0: 200,

@@ -210,12 +210,12 @@ export function buildTier(seed: number, tier: number): BlockDef[] {
       put(cx, cz, half, half);
   }
 
-  // 4. Unbreakables: two bumpers everywhere; spikes ramp with depth; MINES
-  // after the grace tiers — touching one ends the run (owner design).
-  placeSingle("bumper", 50);
-  placeSingle("bumper", 50);
-  const spikes = Math.min(CONFIG.spikeMaxPerTier, tier < 1 ? 0 : 1 + Math.floor(tier / 4));
-  for (let i = 0; i < spikes; i++) placeSingle("spike", 40);
+  // 4. Unbreakables: the same three bumpers and three spikes on every tier.
+  // Spikes used to ramp with depth — none at all on the first tier — which
+  // meant the early game taught a layout the later game did not keep. MINES,
+  // which arrive after the grace tiers, are what escalates instead.
+  for (let i = 0; i < CONFIG.bumpersPerTier; i++) placeSingle("bumper", 50);
+  for (let i = 0; i < CONFIG.spikesPerTier; i++) placeSingle("spike", 40);
   if (tier >= C.mineFreeTiers) {
     // Mines are deliberately SMALLER than a cell (owner): easier to read,
     // slightly easier to thread past.
