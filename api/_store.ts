@@ -63,14 +63,47 @@ export async function credit(
   choice: string | undefined,
   chargeId: string,
 ): Promise<boolean> {
-  const fresh = await db().set(`charge:${chargeId}`, uid, { nx: true, ex: 60 * 60 * 24 * 120 });
+  // What the charge bought is stored with it, so a refund can undo precisely
+  // this and nothing else.
+  const fresh = await db().set(
+    `charge:${chargeId}`,
+    JSON.stringify({ uid, product, choice }),
+    { nx: true, ex: 60 * 60 * 24 * 365 },
+  );
   if (!fresh) return false;
-
-  if (product.startsWith("revive")) await db().hincrby(wallet(uid), "revives", 1);
-  else if (product === "daily_reroll") await db().hincrby(wallet(uid), "reroll", 1);
-  else if (product === "booster_once" && choice) await db().hincrby(wallet(uid), `once:${choice}`, 1);
-  else if (product === "booster_unlock" && choice) await db().sadd(unlocks(uid), choice);
+  await grant(uid, product, choice, 1);
   return true;
+}
+
+/**
+ * Undoes a refunded charge. Telegram lets a buyer get their Stars back — and
+ * lets the bot hand them back, which is how you test without spending — so
+ * without this, buy-and-refund would be a way to keep the goods for free.
+ * Idempotent: the charge record is deleted, so a redelivered refund is a no-op.
+ */
+export async function revoke(chargeId: string): Promise<boolean> {
+  const raw = await db().get<string | { uid: string; product: string; choice?: string }>(`charge:${chargeId}`);
+  if (!raw) return false;
+  const rec = typeof raw === "string" ? (JSON.parse(raw) as { uid: string; product: string; choice?: string }) : raw;
+  await db().del(`charge:${chargeId}`);
+  await grant(rec.uid, rec.product, rec.choice, -1);
+  return true;
+}
+
+// Applies a purchase, or takes it back when n is negative. Counters are held at
+// zero: a refund must not leave a debt that a later honest purchase pays off.
+async function grant(uid: string, product: string, choice: string | undefined, n: 1 | -1): Promise<void> {
+  const bump = async (field: string) => {
+    const left = await db().hincrby(wallet(uid), field, n);
+    if (left < 0) await db().hset(wallet(uid), { [field]: 0 });
+  };
+  if (product.startsWith("revive")) await bump("revives");
+  else if (product === "daily_reroll") await bump("reroll");
+  else if (product === "booster_once" && choice) await bump(`once:${choice}`);
+  else if (product === "booster_unlock" && choice) {
+    if (n > 0) await db().sadd(unlocks(uid), choice);
+    else await db().srem(unlocks(uid), choice);
+  }
 }
 
 /**

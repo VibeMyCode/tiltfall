@@ -5,7 +5,7 @@
 //  - Stars payments. Telegram will not complete a purchase unless the bot
 //    answers pre_checkout_query within ten seconds, and successful_payment is
 //    the only trustworthy word that money changed hands. Both arrive here.
-import { credit } from "./_store.js";
+import { credit, revoke } from "./_store.js";
 import { PRODUCTS } from "../src/products.js";
 
 const WEB_APP = "https://tiltfall.vercel.app/";
@@ -80,6 +80,16 @@ export async function POST(request: Request): Promise<Response> {
     if (p?.p && buyer && paid.telegram_payment_charge_id) {
       await credit(buyer, p.p, p.c, String(paid.telegram_payment_charge_id));
     }
+    return new Response("ok");
+  }
+
+  // --- money went back -------------------------------------------------------
+  // A refund arrives as a service message. Telegram lets the buyer claw Stars
+  // back and lets the bot return them, so goods bought and then refunded have
+  // to go back too — otherwise the pair is a way to keep them for nothing.
+  const refunded = msg?.refunded_payment;
+  if (refunded?.telegram_payment_charge_id) {
+    await revoke(String(refunded.telegram_payment_charge_id));
     return new Response("ok");
   }
 
