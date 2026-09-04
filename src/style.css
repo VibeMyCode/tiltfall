@@ -854,3 +854,33 @@ body.menu-mode .results-scroll { padding-top: 26px; }
 .revive b { font-weight: 900; }
 .revive:disabled { opacity: 0.55; cursor: default; }
 .revive.hidden { display: none; }
+
+/* A locked booster that Stars can open: the level requirement stays, with the
+   price under it, so the choice between waiting and paying is visible at once. */
+.shop-stars {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #ffd166;
+}
+.shop-item.locked:not(:disabled) { cursor: pointer; opacity: 0.85; }
+.shop-item.locked:not(:disabled):hover { opacity: 1; border-color: #ffd166; }
+
+/* Rerolling sits in the heading, not under the rows it is about to replace. */
+.task-reroll {
+  float: right;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid #4a4126;
+  border-radius: 8px;
+  color: #ffd166;
+  font: inherit;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.task-reroll:hover { border-color: #ffd166; }
+.task-reroll:disabled { opacity: 0.5; cursor: default; }

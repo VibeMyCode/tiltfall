@@ -84,6 +84,30 @@ describe("mines", () => {
   });
 });
 
+describe("daily rerolls", () => {
+  it("leaves an unrerolled day exactly as it was", () => {
+    // Players mid-day must not have their tasks shuffled by a deploy.
+    expect(rollDaily("2026-09-04", 0)).toEqual(rollDaily("2026-09-04"));
+  });
+
+  it("gives a different set each time one is bought", () => {
+    const seen = new Set<string>();
+    for (let roll = 0; roll < 5; roll++) {
+      seen.add(
+        rollDaily("2026-09-04", roll)
+          .map((t) => t.id)
+          .join(","),
+      );
+    }
+    // Paying for the same three tasks back would be the one unacceptable result.
+    expect(seen.size).toBeGreaterThan(3);
+  });
+
+  it("still hands out three tasks however many rerolls deep", () => {
+    for (const roll of [0, 1, 7, 40]) expect(rollDaily("2026-09-04", roll)).toHaveLength(3);
+  });
+});
+
 describe("steering", () => {
   it("the drive spring is damped enough to arrive instead of orbiting", () => {
     // Closed loop for the lateral axis: acceleration is g0*kTilt at full tilt,

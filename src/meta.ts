@@ -66,8 +66,10 @@ const TASK_POOL: DailyTask[] = [
 ];
 
 // Same three tasks for everyone on a given UTC date.
-export function rollDaily(dateStr: string): DailyTask[] {
-  const rng = stream("daily", dateSeed(dateStr));
+// `roll` is how many times today's set has been rerolled with Stars. Zero
+// reproduces the original set exactly, so an unrerolled day is unchanged.
+export function rollDaily(dateStr: string, roll = 0): DailyTask[] {
+  const rng = stream("daily", dateSeed(roll > 0 ? `${dateStr}#${roll}` : dateStr));
   const pool = [...TASK_POOL];
   const out: DailyTask[] = [];
   for (let i = 0; i < 3; i++) out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
@@ -76,13 +78,14 @@ export function rollDaily(dateStr: string): DailyTask[] {
 
 export interface DailyProgress {
   date: string;
+  roll?: number; // rerolls bought today; absent on progress saved before this
   progress: Record<string, number>;
   claimed: Record<string, boolean>;
   allClaimed: boolean;
 }
 
 export function freshDaily(dateStr: string): DailyProgress {
-  return { date: dateStr, progress: {}, claimed: {}, allClaimed: false };
+  return { date: dateStr, roll: 0, progress: {}, claimed: {}, allClaimed: false };
 }
 
 // Feed sim events + run summaries into task progress.

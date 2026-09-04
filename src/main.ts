@@ -21,8 +21,8 @@ import { attachInput, isTouch } from "./input.js";
 import { createRenderer } from "./render.js";
 import { createUI, type ResultsModel } from "./ui.js";
 import { createRecorder, type RunProof, type RunRecorder } from "./replay.js";
-import { buy, reviveStars, starsAvailable } from "./pay.js";
-import { reviveProduct } from "./products.js";
+import { buy, fetchEntitlements, reviveStars, starsAvailable } from "./pay.js";
+import { PRODUCTS, reviveProduct } from "./products.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
 import { resetBoard, submitRun } from "./board.js";
 import {
@@ -112,7 +112,7 @@ let skin = load<string>("tf.skin", "core");
 const todayStr = new Date().toISOString().slice(0, 10); // UTC date, outside the sim
 let daily = load<DailyProgress>("tf.daily", freshDaily(todayStr));
 if (daily.date !== todayStr) daily = freshDaily(todayStr);
-const dailyTasks = rollDaily(todayStr);
+let dailyTasks = rollDaily(todayStr, daily.roll ?? 0);
 let banked = false;
 
 const simOpts = () => {
@@ -139,6 +139,13 @@ let recorder: RunRecorder = createRecorder(sim.seed, simOpts().shields, simOpts(
 // sim, and the run is their sum. Each segment keeps its own proof, so the
 // server can still recount the whole thing rather than take the total on faith.
 // This list holds the FINISHED ones; the live sim is always added on top.
+// Boosters opened with Stars instead of levels. The server is the record; this
+// is the copy the shop reads, refreshed after every purchase.
+const starUnlocked = new Set<string>();
+if (starsAvailable()) {
+  void fetchEntitlements().then((e) => e?.unlocked.forEach((id) => starUnlocked.add(id)));
+}
+
 let segments: { score: number; depth: number; blocks: number; proof: RunProof }[] = [];
 
 const runTotal = (): { score: number; depth: number; blocks: number } =>
@@ -399,7 +406,15 @@ const resultsModel = (): ResultsModel => ({
       inventory,
       // Boosters unlock with levels, cheapest first (owner).
       unlockLevel: (id) => CONFIG.levelPerks.find((r) => r.booster === id)?.level ?? 1,
-      unlocked: (id) => perksAt(level).boosters.includes(id),
+      unlocked: (id) => perksAt(level).boosters.includes(id) || starUnlocked.has(id),
+      // Opening one early costs Stars. Offered only where there is somebody to
+      // charge, and only for boosters the level table has not handed over yet.
+      unlockStars: starsAvailable() ? PRODUCTS.booster_unlock.stars : null,
+      async buyUnlock(id) {
+        if (!(await buy("booster_unlock", { choice: id }))) return false;
+        starUnlocked.add(id);
+        return true;
+      },
       buy(id) {
         const price = CONFIG.boosters[id].price;
         if (bank < price || !perksAt(level).boosters.includes(id)) return;
@@ -437,6 +452,16 @@ const resultsModel = (): ResultsModel => ({
       },
     },
     daily: {
+      rerollStars: starsAvailable() ? PRODUCTS.daily_reroll.stars : null,
+      // A reroll replaces today's set, and the progress with it — the point of
+      // paying is to be rid of the tasks you were given, not to keep them.
+      async reroll() {
+        if (!(await buy("daily_reroll"))) return false;
+        daily = { ...freshDaily(todayStr), roll: (daily.roll ?? 0) + 1 };
+        dailyTasks = rollDaily(todayStr, daily.roll);
+        save("tf.daily", daily);
+        return true;
+      },
       tasks: () =>
         dailyTasks.map((t) => ({
           ...t,

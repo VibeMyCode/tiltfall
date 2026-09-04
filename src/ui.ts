@@ -13,6 +13,10 @@ export interface ShopModel {
   unlockLevel: (id: BoosterId) => number;
   unlocked: (id: BoosterId) => boolean;
   buy: (id: BoosterId) => void;
+  // Opening a booster ahead of the level that grants it. Null where there is
+  // nobody to charge.
+  unlockStars: number | null;
+  buyUnlock: (id: BoosterId) => Promise<boolean>;
 }
 
 export interface ResultsModel {
@@ -37,6 +41,8 @@ export interface ResultsModel {
   daily: {
     // A getter, not a snapshot — claiming must refresh the rows (owner bug:
     // the +90 button stayed after claiming).
+    rerollStars: number | null;
+    reroll: () => Promise<boolean>;
     tasks: () => (DailyTask & { progress: number; claimed: boolean })[];
     claim: (id: string) => void;
   };
@@ -418,14 +424,32 @@ export function createUI(h: UIHandlers): UI {
       const btn = document.createElement("button");
       btn.className = `shop-item${unlocked ? "" : " locked"}`;
       btn.style.setProperty("--accent", info.color);
-      btn.disabled = !unlocked || m.shop.bank < price;
-      btn.title = unlocked ? info.desc : `Unlocks at level ${m.shop.unlockLevel(id)}`;
+      // A locked booster is still a button where Stars can open it — otherwise
+      // the shop shows you a thing you want and no way to want it.
+      const stars = unlocked ? null : m.shop.unlockStars;
+      btn.disabled = unlocked ? m.shop.bank < price : stars === null;
+      btn.title = unlocked
+        ? info.desc
+        : stars === null
+          ? `Unlocks at level ${m.shop.unlockLevel(id)}`
+          : `${info.desc} — open it now for ${stars} Stars`;
       btn.innerHTML = unlocked
         ? `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><span class="shop-price">${price}</span><span class="shop-owned">×${owned}</span>`
-        : `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><span class="shop-lock">LVL ${m.shop.unlockLevel(id)}</span>`;
+        : `<span class="shop-icon">${info.svg}</span><b>${info.name}</b><span class="shop-lock">LVL ${m.shop.unlockLevel(id)}</span>${
+            stars === null ? "" : `<span class="shop-stars">${stars} ★</span>`
+          }`;
       btn.addEventListener("click", () => {
-        m.shop.buy(id);
-        renderPanels();
+        if (unlocked) {
+          m.shop.buy(id);
+          renderPanels();
+          return;
+        }
+        if (stars === null || btn.disabled) return;
+        btn.disabled = true; // one invoice at a time
+        void m.shop.buyUnlock(id).then((ok) => {
+          if (ok) renderPanels();
+          else btn.disabled = false;
+        });
       });
       grid.appendChild(btn);
     }
@@ -444,13 +468,28 @@ export function createUI(h: UIHandlers): UI {
         return `<div class="task${t.claimed ? " claimed" : ""}"><span>${t.text}</span>${btn}</div>`;
       })
       .join("");
-    db.innerHTML = `<div class="section-head">DAILY TASKS</div>${rows}`;
+    // Rerolling replaces the set and the progress with it, so it is offered in
+    // the heading rather than under the rows a player is about to lose.
+    const reroll =
+      m.daily.rerollStars === null
+        ? ""
+        : `<button class="task-reroll" id="daily-reroll">NEW TASKS ${m.daily.rerollStars} ★</button>`;
+    db.innerHTML = `<div class="section-head">DAILY TASKS${reroll}</div>${rows}`;
     db.querySelectorAll<HTMLButtonElement>(".task-claim").forEach((b) =>
       b.addEventListener("click", () => {
         m.daily.claim(b.dataset.id!);
         renderPanels();
       }),
     );
+    const rr = db.querySelector<HTMLButtonElement>("#daily-reroll");
+    rr?.addEventListener("click", () => {
+      if (rr.disabled) return;
+      rr.disabled = true; // one invoice at a time
+      void m.daily.reroll().then((ok) => {
+        if (ok) renderPanels();
+        else rr.disabled = false;
+      });
+    });
   }
 
   // --- leaderboard ---------------------------------------------------------
