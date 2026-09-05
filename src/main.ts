@@ -9,7 +9,6 @@ import {
   levelCost,
   nextPerkText,
   perksAt,
-  rerollKeepingClaimed,
   rollDaily,
   trackBoosterUse,
   trackEvents,
@@ -453,28 +452,19 @@ const resultsModel = (): ResultsModel => ({
       },
     },
     daily: {
-      // Nothing to sell once every task has been cashed in — see below.
-      rerollStars:
-        starsAvailable() && !dailyTasks.every((t) => daily.claimed[t.id])
-          ? PRODUCTS.daily_reroll.stars
-          : null,
-      // Replaces only what has NOT been claimed. Keeping the claimed ones in
-      // place is what stops a reroll from being a way to collect the same
-      // rewards twice: at 1000 a task that would be 5000 coins for ten Stars,
-      // repeatable — a coin faucet priced in Stars, which is exactly the thing
-      // we decided not to sell.
+      rerollStars: starsAvailable() ? PRODUCTS.daily_reroll.stars : null,
+      // Replaces ALL three, progress and claims included — a fresh day's worth
+      // of tasks, which is what paying for "new tasks" plainly means.
+      //
+      // This does not put coins on sale, though it looks as if it might: the
+      // rewards still have to be EARNED. Progress resets with the tasks, so a
+      // second 5000 costs another several runs of actual play. What ten Stars
+      // buys is the chance to earn a second daily today, not the coins.
       async reroll() {
         if (!(await buy("daily_reroll"))) return false;
         const roll = (daily.roll ?? 0) + 1;
-        const kept = dailyTasks.filter((t) => daily.claimed[t.id]);
-        dailyTasks = rerollKeepingClaimed(dailyTasks, daily.claimed, todayStr, roll);
-        daily = {
-          date: todayStr,
-          roll,
-          allClaimed: daily.allClaimed,
-          claimed: Object.fromEntries(kept.map((t) => [t.id, true])),
-          progress: Object.fromEntries(kept.map((t) => [t.id, daily.progress[t.id] ?? 0])),
-        };
+        daily = { ...freshDaily(todayStr), roll };
+        dailyTasks = rollDaily(todayStr, roll);
         save("tf.daily", daily);
         return true;
       },

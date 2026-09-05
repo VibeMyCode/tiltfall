@@ -76,25 +76,6 @@ export function rollDaily(dateStr: string, roll = 0): DailyTask[] {
   return out;
 }
 
-/**
- * The set after a paid reroll. Tasks already CLAIMED are kept exactly where
- * they are and only the rest are replaced — which is what stops a reroll from
- * being a way to collect the same rewards again. At 1000 a task that would be
- * thousands of coins for ten Stars, repeatable: a coin faucet priced in Stars.
- *
- * With everything claimed it returns the same set, so there is nothing to sell.
- */
-export function rerollKeepingClaimed(
-  current: DailyTask[],
-  claimed: Record<string, boolean>,
-  dateStr: string,
-  roll: number,
-): DailyTask[] {
-  const kept = current.filter((t) => claimed[t.id]);
-  const fresh = rollDaily(dateStr, roll).filter((t) => !kept.some((k) => k.id === t.id));
-  return [...kept, ...fresh].slice(0, current.length);
-}
-
 export interface DailyProgress {
   date: string;
   roll?: number; // rerolls bought today; absent on progress saved before this

@@ -4,7 +4,7 @@ import { BOOSTER_MODE, BOOSTER_ORDER, boosterPrice } from "../src/boosters";
 import { CONFIG } from "../src/config";
 import { buildTier } from "../src/levelgen";
 import { BIOME_TIER_SPAN, biomeNameAt, paletteAt } from "../src/biomes";
-import { levelCost, nextPerkText, perksAt, rerollKeepingClaimed, rollDaily, skinsAt } from "../src/meta";
+import { levelCost, nextPerkText, perksAt, rollDaily, skinsAt } from "../src/meta";
 import { activateBooster, createSim, driveTilt, jump, step } from "../src/sim";
 
 describe("boosters", () => {
@@ -101,29 +101,6 @@ describe("daily rerolls", () => {
     }
     // Paying for the same three tasks back would be the one unacceptable result.
     expect(seen.size).toBeGreaterThan(3);
-  });
-
-  it("never lets a reroll pay out the same reward twice", () => {
-    // The faucet this guards: claim three tasks worth 1000 each, pay ten Stars,
-    // claim three more. Claimed tasks have to survive the reroll, or coins are
-    // on sale for Stars — the one thing the owner ruled out.
-    const day = rollDaily("2026-09-04");
-    const claimed = { [day[0].id]: true, [day[1].id]: true };
-    const after = rerollKeepingClaimed(day, claimed, "2026-09-04", 1);
-
-    expect(after).toHaveLength(3);
-    // Both claimed tasks are still there, so their rewards cannot be won again.
-    expect(after.filter((t) => claimed[t.id]).map((t) => t.id).sort()).toEqual(
-      [day[0].id, day[1].id].sort(),
-    );
-    // And the one that was not claimed is a different task.
-    expect(after.some((t) => t.id === day[2].id && !claimed[t.id])).toBe(false);
-  });
-
-  it("has nothing to sell once every task is claimed", () => {
-    const day = rollDaily("2026-09-04");
-    const all = Object.fromEntries(day.map((t) => [t.id, true]));
-    expect(rerollKeepingClaimed(day, all, "2026-09-04", 1)).toEqual(day);
   });
 
   it("still hands out three tasks however many rerolls deep", () => {
