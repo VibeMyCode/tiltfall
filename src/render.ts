@@ -43,7 +43,9 @@ interface Ring {
 export interface Renderer {
   engine: Engine;
   scene: Scene;
-  syncBall: (b: { x: number; y: number; z: number }) => void;
+  // Velocity comes along so the ball can ROLL — render-only, the sim never
+  // hears about it, so replays are untouched.
+  syncBall: (b: { x: number; y: number; z: number; vx: number; vy: number; vz: number }) => void;
   applyEvents: (events: SimEvent[]) => void;
   frame: (frameMs: number, tilt: { x: number; z: number }) => void;
   consumeHitStop: () => number;
@@ -471,7 +473,11 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     arcs.push({ mesh: line, life: CONFIG.arcLifeS });
   }
 
+  // syncBall runs outside frame(), so the last frame's length is kept for it.
+  let lastFrameS = 1 / 60;
+
   function updateEffects(dtS: number): void {
+    lastFrameS = dtS;
     for (let i = arcs.length - 1; i >= 0; i--) {
       const a = arcs[i];
       a.life -= dtS;
@@ -548,6 +554,26 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     syncBall(b) {
       ballSimY = b.y;
       ballMesh.position = toLocal(b.x, b.y, b.z);
+
+      // Rolling, so the whole skin comes past instead of one frozen face.
+      //
+      // A ball falling straight down has no rolling axis of its own — the
+      // cross product of velocity and up is zero — so the fall drives a tumble
+      // about a fixed horizontal axis, and steering rolls it sideways the way
+      // a real ball would. Purely cosmetic: the sim has no angular anything.
+      const r = C.ballRadius;
+      const ax = b.vz / r + (b.vy / r) * C.ballTumble; // sideways + the fall
+      const az = -b.vx / r;
+      const rate = Math.sqrt(ax * ax + az * az);
+      if (rate > 1e-4) {
+        // Capped, because terminal velocity would otherwise spin it into a
+        // blur and the texture would read as a grey smear.
+        const step = Math.min(rate, C.ballSpinMax) * lastFrameS;
+        const spin = Quaternion.RotationAxis(new Vector3(ax / rate, 0, az / rate), step);
+        // Pre-multiplied: the axis is in the tower's frame, not the ball's, so
+        // the roll stays put as the ball turns.
+        ballMesh.rotationQuaternion = spin.multiply(ballMesh.rotationQuaternion ?? Quaternion.Identity());
+      }
     },
     applyEvents(events) {
       for (const e of events) {

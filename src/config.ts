@@ -229,6 +229,11 @@ export const CONFIG = {
 
   // Juice (render-only). No positional camera shake — it reads as an input
   // glitch while tilting (owner feedback); breaks pulse the ball + FOV instead.
+  // Ball roll (render-only). A falling ball has no rolling axis of its own, so
+  // the fall drives a tumble at this fraction of the true rate — full speed
+  // would be ten turns a second, which is a smear, not a skin.
+  ballTumble: 0.12,
+  ballSpinMax: 7, // rad/s, about one turn a second at full tilt
   shardImpactInherit: 0.45,
   hitStopMs: 40,
 
