@@ -5,7 +5,7 @@ import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boo
 import { isTouch } from "./input.js";
 import { fetchBoard, type BoardRow, type SubmitResult } from "./board.js";
 import type { DailyTask } from "./meta.js";
-import { SKINS, drawSkin } from "./skins.js";
+import { SKINS, drawSkin, skinThumb, type Rarity } from "./skins.js";
 
 export interface ShopModel {
   bank: number;
@@ -17,6 +17,82 @@ export interface ShopModel {
   // nobody to charge.
   unlockStars: number | null;
   buyUnlock: (id: BoosterId) => Promise<boolean>;
+}
+
+// A skin is a sphere unwrap, so showing it flat is showing the wrong thing —
+// the menu had a ball with rings on it looking like purple stripes. This
+// projects it the way the camera does: a pixel at radius r on the disc lies
+// asin(r) down from the pole, and the pole is the BOTTOM of the texture.
+const PREVIEW = 96;
+const TEX = 128;
+
+function projectBall(src: CanvasImageSource): HTMLCanvasElement {
+  const out = document.createElement("canvas");
+  out.width = PREVIEW;
+  out.height = PREVIEW;
+  const octx = out.getContext("2d");
+  const tmp = document.createElement("canvas");
+  tmp.width = TEX;
+  tmp.height = TEX;
+  const tctx = tmp.getContext("2d");
+  if (!octx || !tctx) return out;
+  tctx.drawImage(src, 0, 0, TEX, TEX);
+  const tex = tctx.getImageData(0, 0, TEX, TEX).data;
+  const img = octx.createImageData(PREVIEW, PREVIEW);
+  const R = PREVIEW / 2;
+  for (let y = 0; y < PREVIEW; y++) {
+    for (let x = 0; x < PREVIEW; x++) {
+      const dx = (x - R + 0.5) / R;
+      const dy = (y - R + 0.5) / R;
+      const r = Math.hypot(dx, dy);
+      if (r > 1) continue; // outside the ball stays transparent
+      const sx = Math.min(TEX - 1, (((Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1) * TEX) | 0);
+      const sy = Math.min(TEX - 1, ((1 - Math.asin(r) / Math.PI) * TEX) | 0);
+      // Brightness falls off toward the rim, or a sphere reads as a sticker.
+      const k = 0.55 + 0.45 * Math.sqrt(1 - r * r);
+      const o = (y * PREVIEW + x) * 4;
+      const t = (sy * TEX + sx) * 4;
+      img.data[o] = tex[t] * k;
+      img.data[o + 1] = tex[t + 1] * k;
+      img.data[o + 2] = tex[t + 2] * k;
+      img.data[o + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  return out;
+}
+
+// Procedural skins draw themselves; the painted ones have a 128px thumbnail,
+// which is what those were generated for. The painted ones arrive late, so the
+// swatch is a host element the projection drops into once the file has decoded.
+function skinSwatch(id: string): HTMLElement {
+  const host = document.createElement("span");
+  host.className = "swatch";
+  const url = skinThumb(id);
+  if (!url) {
+    const cv = document.createElement("canvas");
+    cv.width = TEX;
+    cv.height = TEX;
+    const ctx = cv.getContext("2d");
+    if (ctx) drawSkin(ctx, id, TEX);
+    host.appendChild(projectBall(cv));
+    return host;
+  }
+  const img = new Image();
+  img.src = url;
+  void img
+    .decode()
+    .then(() => host.appendChild(projectBall(img)))
+    .catch(() => {});
+  return host;
+}
+
+export interface SkinOffer {
+  id: string;
+  name: string;
+  rarity: Rarity;
+  stars: number;
+  owned: boolean;
 }
 
 export interface ResultsModel {
@@ -37,7 +113,14 @@ export interface ResultsModel {
     nextText: () => string;
     buy: () => boolean;
   };
-  skins: { unlocked: () => string[]; current: () => string; select: (id: string) => void };
+  skins: {
+    unlocked: () => string[];
+    current: () => string;
+    select: (id: string) => void;
+    forSale: () => SkinOffer[];
+    buyable: boolean; // false outside Telegram, where there is nobody to charge
+    buy: (id: string) => Promise<boolean>;
+  };
   daily: {
     // A getter, not a snapshot — claiming must refresh the rows (owner bug:
     // the +90 button stayed after claiming).
@@ -89,7 +172,7 @@ export interface UIHandlers {
   best: () => { score: number; depth: number };
   // Who you are and what you have carried in — read once when the title screen
   // is built, which is the only time it is shown.
-  account: () => { name: string | null; level: number; bank: number };
+  account: () => { name: string | null; level: number; bank: number; skin: string };
 }
 
 // Same drawing language as the booster icons: 24-box, currentColor, so it
@@ -176,7 +259,8 @@ export function createUI(h: UIHandlers): UI {
     const b = h.best();
     const acc = title.querySelector<HTMLElement>("#title-account")!;
     acc.innerHTML =
-      `<div class="acc-name">${a.name ? a.name.replace(/[<>&"]/g, "").slice(0, 24) : "LOCAL PLAY"}</div>` +
+      `<div class="acc-head"><span class="acc-ball" id="acc-ball"></span>` +
+      `<span class="acc-name">${a.name ? a.name.replace(/[<>&"]/g, "").slice(0, 24) : "LOCAL PLAY"}</span></div>` +
       `<div class="acc-row">` +
       `<button class="acc-cell" id="acc-level" title="Tap to reveal reset"><i>level</i><b>${a.level}</b></button>` +
       `<span class="acc-cell"><i>bank</i><b>${a.bank}</b></span>` +
@@ -184,6 +268,9 @@ export function createUI(h: UIHandlers): UI {
       `<span class="acc-cell"><i>depth</i><b>${b.depth}</b></span>` +
       `</div>` +
       `<button class="reset-link hidden" id="acc-reset">RESET PROGRESS</button>`;
+    // The ball you are wearing, on the card you look at before every run —
+    // otherwise a bought skin is invisible until the run starts.
+    acc.querySelector<HTMLElement>("#acc-ball")!.appendChild(skinSwatch(a.skin));
     // Same rule as on the results card: a level number reveals the reset.
     const accReset = acc.querySelector<HTMLButtonElement>("#acc-reset")!;
     acc.querySelector<HTMLButtonElement>("#acc-level")!.addEventListener("click", () => {
@@ -241,6 +328,10 @@ export function createUI(h: UIHandlers): UI {
         <div class="bank-line">BANK <b class="bank" id="shop-bank">0</b></div>
         <div class="level-box" id="level-box"></div>
         <div class="skin-row" id="skin-row"></div>
+        <div class="section" id="skins-section">
+          <div class="section-head">SKINS</div>
+          <div class="skin-grid" id="skin-grid"></div>
+        </div>
         <div class="section" id="shop-section">
           <div class="section-head">BOOSTERS</div>
           <div class="shop-grid" id="shop-grid"></div>
@@ -396,21 +487,53 @@ export function createUI(h: UIHandlers): UI {
     // showing flat colors while the ball had a pattern).
     const sr = el("skin-row");
     sr.innerHTML = "";
+    let worn: HTMLElement | null = null;
     for (const id of m.skins.unlocked()) {
       const b = document.createElement("button");
       b.className = `skin${id === m.skins.current() ? " sel" : ""}`;
       b.title = SKINS[id]?.name ?? id;
-      const cv = document.createElement("canvas");
-      cv.width = 64;
-      cv.height = 64;
-      const ctx = cv.getContext("2d");
-      if (ctx) drawSkin(ctx, id, 64);
-      b.appendChild(cv);
+      b.appendChild(skinSwatch(id));
       b.addEventListener("click", () => {
         m.skins.select(id);
         renderPanels();
       });
       sr.appendChild(b);
+      if (id === m.skins.current()) worn = b;
+    }
+    // A collection outgrows the row, so the row scrolls — and the one being
+    // worn has to be the one you are looking at when it opens. Set directly
+    // rather than with scrollIntoView, which does nothing while the card is
+    // still hidden, and which would drag the card itself up and down.
+    if (worn) sr.scrollLeft = worn.offsetLeft - (sr.clientWidth - worn.offsetWidth) / 2;
+
+    // Skins for sale.
+    const sg = el("skin-grid");
+    sg.innerHTML = "";
+    for (const o of m.skins.forSale()) {
+      const btn = document.createElement("button");
+      btn.className = `skin-card ${o.rarity}${o.id === m.skins.current() ? " sel" : ""}`;
+      btn.appendChild(skinSwatch(o.id));
+      const cap = document.createElement("span");
+      cap.textContent = o.name;
+      const tag = document.createElement("b");
+      tag.textContent = o.owned ? (o.id === m.skins.current() ? "WORN" : "WEAR") : `${o.stars} ★`;
+      btn.append(cap, tag);
+      // Owned means the button wears it; unowned means it buys it. Outside
+      // Telegram there is nobody to charge, so an unowned one is just shown.
+      btn.disabled = !o.owned && !m.skins.buyable;
+      btn.addEventListener("click", () => {
+        if (o.owned) {
+          m.skins.select(o.id);
+          renderPanels();
+          return;
+        }
+        btn.disabled = true;
+        void m.skins.buy(o.id).then((ok) => {
+          if (ok) renderPanels();
+          else btn.disabled = false;
+        });
+      });
+      sg.appendChild(btn);
     }
 
     // Shop.
@@ -626,8 +749,11 @@ export function createUI(h: UIHandlers): UI {
       title.classList.add("gone");
       document.body.classList.remove("titlescreen");
       document.body.classList.add("menu-mode", "gameover");
-      renderPanels();
+      // Shown BEFORE it is filled: renderPanels measures the skin row to scroll
+      // the worn one into the middle, and a hidden element measures zero.
+      // Nothing paints between these two statements, so there is no flash.
       results.classList.remove("hidden");
+      renderPanels();
     },
     showTitle() {
       renderAccount();
@@ -650,9 +776,9 @@ export function createUI(h: UIHandlers): UI {
       el("res-best").textContent = `${r.bestScore} · depth ${r.bestDepth}`;
       el("res-newbest").classList.toggle("hidden", !r.newBest);
 
-      renderPanels();
       document.body.classList.add("gameover"); // hides jump/booster bar
-      results.classList.remove("hidden");
+      results.classList.remove("hidden"); // before renderPanels — see showMenu
+      renderPanels();
     },
     hideResults() {
       closeRevive();

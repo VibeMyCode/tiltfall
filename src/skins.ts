@@ -12,9 +12,12 @@ export interface SkinDef {
   // A skin has one or the other, never both.
   pattern?: (ctx: CanvasRenderingContext2D, s: number) => void;
   image?: string;
-  rarity?: Rarity;
-  stars?: number; // absent on the procedural skins, which levels hand out
+  rarity?: Rarity; // absent on the procedural skins, which levels hand out
 }
+
+// Price is a property of the RARITY, not of the skin. Twenty rows each
+// carrying their own number is twenty chances for one of them to drift.
+export const RARITY_STARS: Record<Rarity, number> = { common: 25, rare: 60, epic: 120, legendary: 250 };
 
 export const SKINS: Record<string, SkinDef> = {
   core: { name: "CORE", rgb: [0.35, 0.9, 1.0], emissive: 0.35 },
@@ -161,21 +164,26 @@ const ring = (ctx: CanvasRenderingContext2D, s: number, v0: number, v1: number, 
 };
 
 const SHOP: Record<string, SkinDef> = {
-  com_beach_ball: { name: "BEACH BALL", rgb: [1, 1, 1], emissive: 0.15, image: "com-beach-ball", rarity: "common", stars: 25 },
-  com_cherry_stripes: { name: "CHERRY STRIPES", rgb: [1, 1, 1], emissive: 0.15, image: "com-cherry-stripes", rarity: "common", stars: 25 },
-  com_lime_zigzag: { name: "LIME ZIGZAG", rgb: [1, 1, 1], emissive: 0.15, image: "com-lime-zigzag", rarity: "common", stars: 25 },
-  com_pink_clouds: { name: "PINK CLOUDS", rgb: [1, 1, 1], emissive: 0.15, image: "com-pink-clouds", rarity: "common", stars: 25 },
-  com_polka_dots: { name: "POLKA DOTS", rgb: [1, 1, 1], emissive: 0.15, image: "com-polka-dots", rarity: "common", stars: 25 },
-  epic_circuit_traces: { name: "CIRCUIT TRACES", rgb: [1, 1, 1], emissive: 0.15, image: "epic-circuit-traces", rarity: "epic", stars: 120 },
-  epic_galaxy_swirl: { name: "GALAXY SWIRL", rgb: [1, 1, 1], emissive: 0.15, image: "epic-galaxy-swirl", rarity: "epic", stars: 120 },
-  epic_molten_cracks: { name: "MOLTEN CRACKS", rgb: [1, 1, 1], emissive: 0.15, image: "epic-molten-cracks", rarity: "epic", stars: 120 },
-  epic_plasma_arc: { name: "PLASMA ARC", rgb: [1, 1, 1], emissive: 0.15, image: "epic-plasma-arc", rarity: "epic", stars: 120 },
-  epic_rainbow: { name: "RAINBOW", rgb: [1, 1, 1], emissive: 0.15, image: "epic-rainbow", rarity: "epic", stars: 120 },
-  legend_aurora_ribbons: { name: "AURORA RIBBONS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-aurora-ribbons", rarity: "legendary", stars: 250 },
-  legend_crystal_facets: { name: "CRYSTAL FACETS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-crystal-facets", rarity: "legendary", stars: 250 },
-  legend_dark_eye: { name: "DARK EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-dark-eye", rarity: "legendary", stars: 250 },
-  legend_liquid_gold: { name: "LIQUID GOLD", rgb: [1, 1, 1], emissive: 0.15, image: "legend-liquid-gold", rarity: "legendary", stars: 250 },
-  legend_living_eye: { name: "LIVING EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-living-eye", rarity: "legendary", stars: 250 },
+  com_beach_ball: { name: "BEACH BALL", rgb: [1, 1, 1], emissive: 0.15, image: "com-beach-ball", rarity: "common" },
+  com_cherry_stripes: { name: "CHERRY STRIPES", rgb: [1, 1, 1], emissive: 0.15, image: "com-cherry-stripes", rarity: "common" },
+  com_lime_zigzag: { name: "LIME ZIGZAG", rgb: [1, 1, 1], emissive: 0.15, image: "com-lime-zigzag", rarity: "common" },
+  com_pink_clouds: { name: "PINK CLOUDS", rgb: [1, 1, 1], emissive: 0.15, image: "com-pink-clouds", rarity: "common" },
+  com_polka_dots: { name: "POLKA DOTS", rgb: [1, 1, 1], emissive: 0.15, image: "com-polka-dots", rarity: "common" },
+  rar_blobs_magenta: { name: "BLOBS MAGENTA", rgb: [1, 1, 1], emissive: 0.15, image: "rar-blobs-magenta", rarity: "rare" },
+  rar_checkers: { name: "CHECKERS", rgb: [1, 1, 1], emissive: 0.15, image: "rar-checkers", rarity: "rare" },
+  rar_eyes: { name: "EYES", rgb: [1, 1, 1], emissive: 0.15, image: "rar-eyes", rarity: "rare" },
+  rar_tiger: { name: "TIGER", rgb: [1, 1, 1], emissive: 0.15, image: "rar-tiger", rarity: "rare" },
+  rar_watermelon: { name: "WATERMELON", rgb: [1, 1, 1], emissive: 0.15, image: "rar-watermelon", rarity: "rare" },
+  epic_circuit_traces: { name: "CIRCUIT TRACES", rgb: [1, 1, 1], emissive: 0.15, image: "epic-circuit-traces", rarity: "epic" },
+  epic_galaxy_swirl: { name: "GALAXY SWIRL", rgb: [1, 1, 1], emissive: 0.15, image: "epic-galaxy-swirl", rarity: "epic" },
+  epic_molten_cracks: { name: "MOLTEN CRACKS", rgb: [1, 1, 1], emissive: 0.15, image: "epic-molten-cracks", rarity: "epic" },
+  epic_plasma_arc: { name: "PLASMA ARC", rgb: [1, 1, 1], emissive: 0.15, image: "epic-plasma-arc", rarity: "epic" },
+  epic_rainbow: { name: "RAINBOW", rgb: [1, 1, 1], emissive: 0.15, image: "epic-rainbow", rarity: "epic" },
+  legend_aurora_ribbons: { name: "AURORA RIBBONS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-aurora-ribbons", rarity: "legendary" },
+  legend_crystal_facets: { name: "CRYSTAL FACETS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-crystal-facets", rarity: "legendary" },
+  legend_dark_eye: { name: "DARK EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-dark-eye", rarity: "legendary" },
+  legend_liquid_gold: { name: "LIQUID GOLD", rgb: [1, 1, 1], emissive: 0.15, image: "legend-liquid-gold", rarity: "legendary" },
+  legend_living_eye: { name: "LIVING EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-living-eye", rarity: "legendary" },
   // --- eyes ------------------------------------------------------------------
   // Drawn rather than painted: an eye is four flat bands and a few marks, and
   // a generator asked for one keeps producing a tiling stripe pattern, which
@@ -185,7 +193,6 @@ const SHOP: Record<string, SkinDef> = {
     rgb: [1, 1, 1],
     emissive: 0.15,
     rarity: "legendary",
-    stars: 250,
     pattern: (ctx, s) => {
       pole(ctx, s);
       ring(ctx, s, 0, 0.13, "#150609"); // pupil
@@ -217,7 +224,6 @@ const SHOP: Record<string, SkinDef> = {
     rgb: [1, 1, 1],
     emissive: 0.15,
     rarity: "legendary",
-    stars: 250,
     // The easiest of the four: its ripples ARE rings around the pole, so they
     // are literally the bands of the unwrap, and it survives the roll intact.
     pattern: (ctx, s) => {
@@ -234,7 +240,6 @@ const SHOP: Record<string, SkinDef> = {
     rgb: [1, 1, 1],
     emissive: 0.15,
     rarity: "legendary",
-    stars: 250,
     // Pupil-less by design, so it is a pale ball with veins instead. Veins run
     // outward from the pole, which in the unwrap means straight down.
     pattern: (ctx, s) => {
@@ -258,7 +263,6 @@ const SHOP: Record<string, SkinDef> = {
     rgb: [1, 1, 1],
     emissive: 0.15,
     rarity: "legendary",
-    stars: 250,
     // A toad's horizontal bar pupil cannot survive this projection — anything
     // centred on the pole comes out as a ring — so it is a ring pupil instead.
     pattern: (ctx, s) => {
@@ -277,6 +281,12 @@ const SHOP: Record<string, SkinDef> = {
 Object.assign(SKINS, SHOP);
 
 export const SHOP_SKINS: string[] = Object.keys(SHOP);
+/** What a shop skin costs in Stars, or null for one levels hand out free. */
+export const skinStars = (id: string): number | null => {
+  const r = SKINS[id]?.rarity;
+  return r ? RARITY_STARS[r] : null;
+};
+
 export const skinImage = (id: string): string | null =>
   SKINS[id]?.image ? `/skins/${SKINS[id].image}.jpg` : null;
 export const skinThumb = (id: string): string | null =>

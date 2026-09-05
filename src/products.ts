@@ -6,7 +6,13 @@
 // Prices are in Stars. At the current rate 100 Stars is about $1.33, so a Star
 // is roughly 1.3 cents, and the ladder below is set for a game nobody has heard
 // of yet: the first purchase has to be small enough not to be a decision.
+import { RARITY_STARS, SKINS } from "./skins.js";
+
 export type ProductId =
+  | "skin_common"
+  | "skin_rare"
+  | "skin_epic"
+  | "skin_legendary"
   | "revive1"
   | "revive2"
   | "revive3"
@@ -21,7 +27,7 @@ export interface Product {
   desc: string;
   // A payload the buyer chooses (which booster, which skin). Validated by the
   // server against what the product allows — never trusted as given.
-  needsChoice?: "booster";
+  needsChoice?: "booster" | "skin";
 }
 
 export const PRODUCTS: Record<ProductId, Product> = {
@@ -46,12 +52,26 @@ export const PRODUCTS: Record<ProductId, Product> = {
     desc: "Open a booster now instead of levelling to it",
     needsChoice: "booster",
   },
+  // One product per rarity rather than one per skin: the price lives in the
+  // catalogue, and the server checks that the chosen skin's rarity matches the
+  // product bought — otherwise a legendary could be had at the common price.
+  skin_common: { id: "skin_common", stars: RARITY_STARS.common, title: "Skin", desc: "A common ball skin", needsChoice: "skin" },
+  skin_rare: { id: "skin_rare", stars: RARITY_STARS.rare, title: "Skin", desc: "A rare ball skin", needsChoice: "skin" },
+  skin_epic: { id: "skin_epic", stars: RARITY_STARS.epic, title: "Skin", desc: "An epic ball skin", needsChoice: "skin" },
+  skin_legendary: { id: "skin_legendary", stars: RARITY_STARS.legendary, title: "Skin", desc: "A legendary ball skin", needsChoice: "skin" },
+
   daily_reroll: { id: "daily_reroll", stars: 10, title: "New daily tasks", desc: "Reroll today's tasks" },
 };
 
 // The nth continue inside a single run, capped at the top rung. One function,
 // used by the button that shows the price AND by the server that charges it —
 // two copies of this ladder would eventually quote different numbers.
+/** Which product buys this skin, or null for one that is not for sale. */
+export const skinProduct = (id: string): ProductId | null => {
+  const r = SKINS[id]?.rarity;
+  return r ? (`skin_${r}` as ProductId) : null;
+};
+
 export const revivePrice = (n: number): Product =>
   n <= 1 ? PRODUCTS.revive1 : n === 2 ? PRODUCTS.revive2 : PRODUCTS.revive3;
 

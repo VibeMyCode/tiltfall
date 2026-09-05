@@ -22,7 +22,8 @@ import { createRenderer } from "./render.js";
 import { createUI, type ResultsModel } from "./ui.js";
 import { createRecorder, type RunProof, type RunRecorder } from "./replay.js";
 import { buy, fetchEntitlements, reviveStars, starsAvailable } from "./pay.js";
-import { PRODUCTS, reviveProduct } from "./products.js";
+import { PRODUCTS, reviveProduct, skinProduct } from "./products.js";
+import { SHOP_SKINS, SKINS, skinStars } from "./skins.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
 import { resetBoard, submitRun } from "./board.js";
 import {
@@ -142,9 +143,21 @@ let recorder: RunRecorder = createRecorder(sim.seed, simOpts().shields, simOpts(
 // Boosters opened with Stars instead of levels. The server is the record; this
 // is the copy the shop reads, refreshed after every purchase.
 const starUnlocked = new Set<string>();
+// Skins bought with Stars. Same arrangement, plus a local copy: the strip has
+// to be right on the first frame, and the entitlements fetch lands later. It is
+// deliberately NOT in SYNCED_KEYS — the server ledger is already per-account,
+// and putting it there would let a progress reset push an empty list to the
+// player's other device and erase what they paid for.
+const boughtSkins = new Set<string>(load<string[]>("tf.skins", []));
 if (starsAvailable()) {
-  void fetchEntitlements().then((e) => e?.unlocked.forEach((id) => starUnlocked.add(id)));
+  void fetchEntitlements().then((e) => {
+    if (!e) return;
+    e.unlocked.forEach((id) => starUnlocked.add(id));
+    e.skins.forEach((id) => boughtSkins.add(id));
+    save("tf.skins", [...boughtSkins]);
+  });
 }
+const ownsSkin = (id: string): boolean => perksAt(level).skins.includes(id) || boughtSkins.has(id);
 
 let segments: { score: number; depth: number; blocks: number; proof: RunProof }[] = [];
 
@@ -307,7 +320,7 @@ const ui = createUI({
   onActivate: tryActivate,
   onJump: tryJump,
   best: () => best,
-  account: () => ({ name: playerName(), level, bank }),
+  account: () => ({ name: playerName(), level, bank, skin }),
   mute: { get: () => isMuted(), toggle: () => toggleMute() },
   onHome: () => {
     // Back to the title screen: the loop freezes on `started`, so the tower
@@ -442,13 +455,37 @@ const resultsModel = (): ResultsModel => ({
       },
     },
     skins: {
-      unlocked: () => perksAt(level).skins,
+      // Levelled-into first, then bought — the strip reads as a history of the
+      // account rather than of the catalogue.
+      unlocked: () => [...perksAt(level).skins, ...SHOP_SKINS.filter((id) => boughtSkins.has(id))],
       current: () => skin,
       select: (id) => {
-        if (!perksAt(level).skins.includes(id)) return;
+        if (!ownsSkin(id)) return;
         skin = id;
         save("tf.skin", skin);
         renderer.setSkin(skin);
+      },
+      // Cheapest first, which sorts by rarity for free.
+      forSale: () =>
+        SHOP_SKINS.map((id) => ({
+          id,
+          name: SKINS[id].name,
+          rarity: SKINS[id].rarity ?? "common",
+          stars: skinStars(id) ?? 0,
+          owned: boughtSkins.has(id),
+        })).sort((a, b) => a.stars - b.stars),
+      buyable: starsAvailable(),
+      async buy(id) {
+        const product = skinProduct(id);
+        if (!product || boughtSkins.has(id)) return false;
+        if (!(await buy(product, { choice: id }))) return false;
+        boughtSkins.add(id);
+        save("tf.skins", [...boughtSkins]);
+        // Worn straight away: nobody buys a skin to not put it on.
+        skin = id;
+        save("tf.skin", skin);
+        renderer.setSkin(skin);
+        return true;
       },
     },
     daily: {

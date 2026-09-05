@@ -247,7 +247,59 @@ canvas#scene {
 }
 #lvl-buy:disabled { opacity: 0.35; cursor: default; }
 
-.skin-row { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
+/* The wardrobe outgrows one line as soon as skins are bought, so it scrolls
+   sideways instead of wrapping — a swipe on touch, a trackpad flick on desktop.
+   Snapping stops it from settling half-way between two balls. */
+.skin-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: flex-start;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  padding: 2px 2px 6px;
+  -webkit-overflow-scrolling: touch;
+}
+.skin-row::-webkit-scrollbar { display: none; }
+.skin { flex: 0 0 auto; scroll-snap-align: center; }
+
+/* The projection already draws a round, shaded ball on transparent pixels,
+   so the swatch needs no mask and no background of its own. */
+.swatch { display: block; }
+.swatch canvas { width: 100%; height: 100%; display: block; }
+
+.acc-head { display: flex; align-items: center; justify-content: center; gap: 9px; }
+.acc-ball { width: 34px; height: 34px; flex: 0 0 auto; }
+.acc-ball .swatch { width: 100%; height: 100%; }
+
+.skin-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.skin-card {
+  border: 1.5px solid var(--rare-c);
+  border-radius: 12px;
+  background: #10162c;
+  color: #cfdcf6;
+  padding: 6px 4px 5px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 8.5px;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+.skin-card .swatch { width: 40px; height: 40px; }
+.skin-card b { color: var(--rare-c); font-size: 9.5px; }
+.skin-card.sel { box-shadow: 0 0 0 2px #fff inset; }
+.skin-card:disabled { opacity: 0.4; cursor: default; }
+.skin-card:not(:disabled):active { transform: scale(0.95); }
+/* Rarity is the only thing telling a 25-Star skin from a 250-Star one, so it
+   is carried by colour rather than by a word nobody reads. */
+.skin-card.common { --rare-c: #8fa2c9; }
+.skin-card.rare { --rare-c: #6fd0ff; }
+.skin-card.epic { --rare-c: #c58bff; }
+.skin-card.legendary { --rare-c: #ffc44d; }
 .skin { width: 34px; height: 34px; border-radius: 50%; border: 2px solid #2c3766; cursor: pointer; }
 .skin.sel { border-color: #fff; box-shadow: 0 0 12px rgba(255, 255, 255, 0.5); }
 .unused-skin-core { background: radial-gradient(circle at 35% 30%, #bff, #59e6ff); }
@@ -414,7 +466,7 @@ body.gameover .booster-bar, body.gameover .hud { display: none; }
 
 /* Skin swatches render the real generated pattern */
 .skin { width: 38px; height: 38px; padding: 0; overflow: hidden; background: #0c1020; }
-.skin canvas { width: 100%; height: 100%; display: block; border-radius: 50%; }
+.skin .swatch { width: 100%; height: 100%; }
 
 /* ---- Title screen ---- */
 .title {
@@ -447,8 +499,8 @@ body.gameover .booster-bar, body.gameover .hud { display: none; }
   letter-spacing: 0.18em;
   color: #ffe9a8;
   text-transform: uppercase;
-  margin-bottom: 10px;
 }
+.acc-head { margin-bottom: 10px; }
 .acc-row {
   display: flex;
   justify-content: center;

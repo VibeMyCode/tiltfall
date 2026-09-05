@@ -7,7 +7,8 @@
 import { verifyInitData } from "./_initdata.js";
 import { entitlements, rateLimit } from "./_store.js";
 import { BOOSTER_ORDER } from "../src/boosters.js";
-import { PRODUCTS, revivePrice, type Product, type ProductId } from "../src/products.js";
+import { PRODUCTS, revivePrice, skinProduct, type Product, type ProductId } from "../src/products.js";
+import { SHOP_SKINS } from "../src/skins.js";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -58,6 +59,13 @@ export async function POST(request: Request): Promise<Response> {
     choice = String(body.choice ?? "");
     if (!(BOOSTER_ORDER as readonly string[]).includes(choice)) {
       return json({ error: "no such booster" }, 400);
+    }
+  } else if (product.needsChoice === "skin") {
+    choice = String(body.choice ?? "");
+    // The rarity has to match the product, or the cheap invoice would buy the
+    // dear skin.
+    if (!SHOP_SKINS.includes(choice) || skinProduct(choice) !== product.id) {
+      return json({ error: "no such skin" }, 400);
     }
   }
 

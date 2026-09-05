@@ -11,6 +11,7 @@ export interface Entitlements {
   once: Record<string, number>;
   rerolls: number;
   unlocked: string[];
+  skins: string[];
 }
 
 async function post(body: unknown): Promise<Record<string, unknown> | null> {

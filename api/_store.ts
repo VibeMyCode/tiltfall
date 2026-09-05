@@ -26,18 +26,21 @@ export const rateLimit = (): Ratelimit =>
 
 const wallet = (uid: string) => `pay:${uid}`;
 const unlocks = (uid: string) => `unlocked:${uid}`;
+const owned = (uid: string) => `skins:${uid}`;
 
 export interface Entitlements {
   revives: number; // unspent continues, bought at escalating prices
   once: Record<string, number>; // booster id -> unspent single uses
   rerolls: number;
   unlocked: string[]; // boosters opened with Stars rather than levels
+  skins: string[]; // skins bought with Stars rather than levelled into
 }
 
 export async function entitlements(uid: string): Promise<Entitlements> {
-  const [h, u] = await Promise.all([
+  const [h, u, sk] = await Promise.all([
     db().hgetall<Record<string, string>>(wallet(uid)),
     db().smembers(unlocks(uid)),
+    db().smembers(owned(uid)),
   ]);
   const once: Record<string, number> = {};
   for (const [k, v] of Object.entries(h ?? {})) {
@@ -48,6 +51,7 @@ export async function entitlements(uid: string): Promise<Entitlements> {
     once,
     rerolls: Number(h?.reroll ?? 0),
     unlocked: (u ?? []).map(String),
+    skins: (sk ?? []).map(String),
   };
 }
 
@@ -103,6 +107,9 @@ async function grant(uid: string, product: string, choice: string | undefined, n
   else if (product === "booster_unlock" && choice) {
     if (n > 0) await db().sadd(unlocks(uid), choice);
     else await db().srem(unlocks(uid), choice);
+  } else if (product.startsWith("skin_") && choice) {
+    if (n > 0) await db().sadd(owned(uid), choice);
+    else await db().srem(owned(uid), choice);
   }
 }
 
