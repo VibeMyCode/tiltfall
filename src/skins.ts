@@ -147,6 +147,19 @@ export const SKINS: Record<string, SkinDef> = {
 // rgb stays white so the image carries the colour, and emissive is low: these
 // are far brighter than the procedural set, and the glow layer would bloom a
 // saturated texture into a white ball.
+// Eye skins share a frame. Babylon's sphere runs V bottom-up, so the BOTTOM
+// edge of the canvas is the pole; pole() flips the canvas so a pattern can be
+// written pupil-first, and ring() lays down one latitude band. The camera sits
+// 34 degrees off the pole, so an eye has to be wide to still fill the disc.
+const pole = (ctx: CanvasRenderingContext2D, s: number): void => {
+  ctx.translate(0, s);
+  ctx.scale(1, -1);
+};
+const ring = (ctx: CanvasRenderingContext2D, s: number, v0: number, v1: number, c: string): void => {
+  ctx.fillStyle = c;
+  ctx.fillRect(0, v0 * s, s, (v1 - v0) * s);
+};
+
 const SHOP: Record<string, SkinDef> = {
   com_beach_ball: { name: "BEACH BALL", rgb: [1, 1, 1], emissive: 0.15, image: "com-beach-ball", rarity: "common", stars: 25 },
   com_cherry_stripes: { name: "CHERRY STRIPES", rgb: [1, 1, 1], emissive: 0.15, image: "com-cherry-stripes", rarity: "common", stars: 25 },
@@ -159,19 +172,104 @@ const SHOP: Record<string, SkinDef> = {
   epic_plasma_arc: { name: "PLASMA ARC", rgb: [1, 1, 1], emissive: 0.15, image: "epic-plasma-arc", rarity: "epic", stars: 120 },
   epic_rainbow: { name: "RAINBOW", rgb: [1, 1, 1], emissive: 0.15, image: "epic-rainbow", rarity: "epic", stars: 120 },
   legend_aurora_ribbons: { name: "AURORA RIBBONS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-aurora-ribbons", rarity: "legendary", stars: 250 },
-  legend_byakugan: { name: "BYAKUGAN", rgb: [1, 1, 1], emissive: 0.15, image: "legend-byakugan", rarity: "legendary", stars: 250 },
   legend_crystal_facets: { name: "CRYSTAL FACETS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-crystal-facets", rarity: "legendary", stars: 250 },
   legend_dark_eye: { name: "DARK EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-dark-eye", rarity: "legendary", stars: 250 },
   legend_liquid_gold: { name: "LIQUID GOLD", rgb: [1, 1, 1], emissive: 0.15, image: "legend-liquid-gold", rarity: "legendary", stars: 250 },
   legend_living_eye: { name: "LIVING EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-living-eye", rarity: "legendary", stars: 250 },
-  legend_rinnegan: { name: "RINNEGAN", rgb: [1, 1, 1], emissive: 0.15, image: "legend-rinnegan", rarity: "legendary", stars: 250 },
-  legend_sage: { name: "SAGE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-sage", rarity: "legendary", stars: 250 },
-  legend_sharingan_4: { name: "SHARINGAN 4", rgb: [1, 1, 1], emissive: 0.15, image: "legend-sharingan-4", rarity: "legendary", stars: 250 },
-  rar_blobs_magenta: { name: "BLOBS MAGENTA", rgb: [1, 1, 1], emissive: 0.15, image: "rar-blobs-magenta", rarity: "rare", stars: 60 },
-  rar_checkers: { name: "CHECKERS", rgb: [1, 1, 1], emissive: 0.15, image: "rar-checkers", rarity: "rare", stars: 60 },
-  rar_eyes: { name: "EYES", rgb: [1, 1, 1], emissive: 0.15, image: "rar-eyes", rarity: "rare", stars: 60 },
-  rar_tiger: { name: "TIGER", rgb: [1, 1, 1], emissive: 0.15, image: "rar-tiger", rarity: "rare", stars: 60 },
-  rar_watermelon: { name: "WATERMELON", rgb: [1, 1, 1], emissive: 0.15, image: "rar-watermelon", rarity: "rare", stars: 60 },
+  // --- eyes ------------------------------------------------------------------
+  // Drawn rather than painted: an eye is four flat bands and a few marks, and
+  // a generator asked for one keeps producing a tiling stripe pattern, which
+  // wraps into a dartboard.
+  legend_sharingan_4: {
+    name: "SHARINGAN",
+    rgb: [1, 1, 1],
+    emissive: 0.15,
+    rarity: "legendary",
+    stars: 250,
+    pattern: (ctx, s) => {
+      pole(ctx, s);
+      ring(ctx, s, 0, 0.13, "#150609"); // pupil
+      ring(ctx, s, 0.13, 0.42, "#d0121b"); // iris
+      ring(ctx, s, 0.42, 0.47, "#12060a"); // rim
+      ring(ctx, s, 0.47, 1, "#8f1420"); // the far side
+      // A ring this far down the sphere is 1.5x longer than it is tall, so a
+      // tomoe is squashed sideways in the texture to come out round on the ball.
+      const r = s * 0.075;
+      ctx.fillStyle = "#0d0405";
+      for (let i = 0; i < 3; i++) {
+        ctx.save();
+        ctx.translate(((i + 0.5) / 3) * s, 0.27 * s);
+        ctx.scale(0.67, 1);
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(r * 0.2, -r * 0.95);
+        ctx.quadraticCurveTo(r * 3.4, -r * 1.1, r * 3.3, r * 1.1);
+        ctx.quadraticCurveTo(r * 1.6, r * 0.1, r * 0.95, r * 0.35);
+        ctx.fill();
+        ctx.restore();
+      }
+    },
+  },
+  legend_rinnegan: {
+    name: "RINNEGAN",
+    rgb: [1, 1, 1],
+    emissive: 0.15,
+    rarity: "legendary",
+    stars: 250,
+    // The easiest of the four: its ripples ARE rings around the pole, so they
+    // are literally the bands of the unwrap, and it survives the roll intact.
+    pattern: (ctx, s) => {
+      pole(ctx, s);
+      ring(ctx, s, 0, 0.08, "#2b1f45");
+      for (let i = 0; i < 7; i++) {
+        ring(ctx, s, 0.08 + i * 0.09, 0.08 + (i + 1) * 0.09, i % 2 ? "#7a5fc0" : "#cdb9f2");
+      }
+      ring(ctx, s, 0.71, 1, "#8f74cc");
+    },
+  },
+  legend_byakugan: {
+    name: "BYAKUGAN",
+    rgb: [1, 1, 1],
+    emissive: 0.15,
+    rarity: "legendary",
+    stars: 250,
+    // Pupil-less by design, so it is a pale ball with veins instead. Veins run
+    // outward from the pole, which in the unwrap means straight down.
+    pattern: (ctx, s) => {
+      pole(ctx, s);
+      ring(ctx, s, 0, 1, "#efeaf7");
+      ring(ctx, s, 0, 0.16, "#ded4ee");
+      ctx.strokeStyle = "#a893c6";
+      ctx.lineWidth = s * 0.014;
+      for (let i = 0; i < 14; i++) {
+        const x = ((i + 0.5) / 14) * s;
+        const wob = (i % 2 ? 1 : -1) * s * 0.03;
+        ctx.beginPath();
+        ctx.moveTo(x, 0.2 * s);
+        ctx.quadraticCurveTo(x + wob, 0.42 * s, x, 0.62 * s);
+        ctx.stroke();
+      }
+    },
+  },
+  legend_sage: {
+    name: "SAGE",
+    rgb: [1, 1, 1],
+    emissive: 0.15,
+    rarity: "legendary",
+    stars: 250,
+    // A toad's horizontal bar pupil cannot survive this projection — anything
+    // centred on the pole comes out as a ring — so it is a ring pupil instead.
+    pattern: (ctx, s) => {
+      pole(ctx, s);
+      ring(ctx, s, 0, 0.07, "#f7d774");
+      ring(ctx, s, 0.07, 0.17, "#1a0f06"); // the bar pupil, as a ring
+      ring(ctx, s, 0.17, 0.46, "#f2a616"); // amber iris
+      ring(ctx, s, 0.46, 0.52, "#8a3d06"); // rim
+      ring(ctx, s, 0.52, 1, "#c4721a"); // the far side
+    },
+  },
 };
 
 // One table for the game to look up, two sources: levels grant the procedural
