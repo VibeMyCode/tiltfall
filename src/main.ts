@@ -21,7 +21,7 @@ import { attachInput, isTouch } from "./input.js";
 import { createRenderer } from "./render.js";
 import { createUI, type ResultsModel } from "./ui.js";
 import { createRecorder, type RunProof, type RunRecorder } from "./replay.js";
-import { buy, fetchEntitlements, reviveStars, starsAvailable } from "./pay.js";
+import { buy, claimGift, fetchEntitlements, reviveStars, starsAvailable, type Gift } from "./pay.js";
 import { PRODUCTS, reviveProduct, skinProduct } from "./products.js";
 import { SHOP_SKINS, SKINS, skinStars } from "./skins.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
@@ -35,10 +35,16 @@ import {
   initTelegram,
   inTelegram,
   playerName,
+  shareGift,
   shareTelegram,
   shareX,
+  startParam,
 } from "./telegram.js";
 import { biomeNameAt } from "./biomes.js";
+
+// Where a gift is redeemed: the Mini App, opened with the code as its deep-link
+// payload. startapp only carries A-Z a-z 0-9 _ - , which a hex code satisfies.
+const giftLink = (code: string): string => `${CONFIG.botUrl}?startapp=g_${code}`;
 
 const DT_MS = 1000 * CONFIG.dt;
 const MAX_FRAME_MS = 100;
@@ -149,13 +155,41 @@ const starUnlocked = new Set<string>();
 // and putting it there would let a progress reset push an empty list to the
 // player's other device and erase what they paid for.
 const boughtSkins = new Set<string>(load<string[]>("tf.skins", []));
+// Gifts this account has BOUGHT and not yet handed over — the buyer has to be
+// able to send the link again, or a share cancelled once loses the purchase.
+let myGifts: Gift[] = [];
+
+function applyEntitlements(e: { unlocked: string[]; skins: string[]; gifts: Gift[] }): void {
+  e.unlocked.forEach((id) => starUnlocked.add(id));
+  e.skins.forEach((id) => boughtSkins.add(id));
+  myGifts = e.gifts.filter((g) => !g.to);
+  save("tf.skins", [...boughtSkins]);
+}
+
 if (starsAvailable()) {
-  void fetchEntitlements().then((e) => {
-    if (!e) return;
-    e.unlocked.forEach((id) => starUnlocked.add(id));
-    e.skins.forEach((id) => boughtSkins.add(id));
-    save("tf.skins", [...boughtSkins]);
-  });
+  void fetchEntitlements().then((e) => e && applyEntitlements(e));
+
+  // Opened from a gift link. Nothing is trusted on the strength of the URL:
+  // the server redeems the code against its own ledger and hands back what it
+  // actually granted.
+  const start = startParam();
+  if (start?.startsWith("g_")) {
+    void claimGift(start.slice(2)).then((g) => {
+      if (!g?.choice) return;
+      if (g.product.startsWith("skin_")) {
+        boughtSkins.add(g.choice);
+        save("tf.skins", [...boughtSkins]);
+        skin = g.choice; // worn at once, so the ball on the title card IS the gift
+        save("tf.skin", skin);
+        renderer.setSkin(skin);
+        ui.showBiome(`GIFT · ${SKINS[g.choice]?.name ?? "SKIN"}`);
+      } else {
+        starUnlocked.add(g.choice);
+        ui.showBiome(`GIFT · ${g.choice.toUpperCase()}`);
+      }
+      ui.showTitle();
+    });
+  }
 }
 const ownsSkin = (id: string): boolean => perksAt(level).skins.includes(id) || boughtSkins.has(id);
 
@@ -475,6 +509,18 @@ const resultsModel = (): ResultsModel => ({
           owned: boughtSkins.has(id),
         })).sort((a, b) => a.stars - b.stars),
       buyable: starsAvailable(),
+      async gift(id) {
+        const product = skinProduct(id);
+        // A gift can be a skin you already own — that is most of the point.
+        if (!product || !(await buy(product, { choice: id, gift: true }))) return false;
+        const e = await fetchEntitlements();
+        if (e) applyEntitlements(e);
+        // Straight to the share sheet: the buyer picks the friend in Telegram's
+        // own chat list rather than copying a URL around.
+        const fresh = myGifts[myGifts.length - 1];
+        if (fresh) shareGift(giftLink(fresh.code), SKINS[id]?.name ?? "skin");
+        return true;
+      },
       async buy(id) {
         const product = skinProduct(id);
         if (!product || boughtSkins.has(id)) return false;
@@ -486,6 +532,14 @@ const resultsModel = (): ResultsModel => ({
         save("tf.skin", skin);
         renderer.setSkin(skin);
         return true;
+      },
+    },
+    gifts: {
+      unsent: () =>
+        myGifts.map((g) => ({ code: g.code, name: (g.choice && SKINS[g.choice]?.name) || g.choice || "GIFT" })),
+      share: (code) => {
+        const g = myGifts.find((x) => x.code === code);
+        if (g) shareGift(giftLink(code), (g.choice && SKINS[g.choice]?.name) || "gift");
       },
     },
     daily: {

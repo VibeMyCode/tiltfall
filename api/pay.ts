@@ -5,7 +5,7 @@
 // request. A client that could name its own price would be a client that pays
 // one Star for anything.
 import { verifyInitData } from "./_initdata.js";
-import { entitlements, rateLimit } from "./_store.js";
+import { claimGift, entitlements, rateLimit } from "./_store.js";
 import { BOOSTER_ORDER } from "../src/boosters.js";
 import { PRODUCTS, revivePrice, skinProduct, type Product, type ProductId } from "../src/products.js";
 import { SHOP_SKINS } from "../src/skins.js";
@@ -15,16 +15,18 @@ const json = (body: unknown, status = 200) =>
 
 interface Body {
   initData?: string;
-  action?: "invoice" | "entitlements";
+  action?: "invoice" | "entitlements" | "claim";
   product?: ProductId;
   choice?: string; // which booster, for the products that need one
   reviveN?: number; // which continue this is within the run — sets the price
+  gift?: boolean; // bought for somebody else: mints a code instead of goods
+  code?: string; // the gift being redeemed
 }
 
 // The payload rides through Telegram and comes back on successful_payment.
 // Telegram caps it at 128 bytes, so it stays terse.
-export const encodePayload = (uid: string, product: string, choice?: string): string =>
-  JSON.stringify({ u: uid, p: product, ...(choice ? { c: choice } : {}) });
+export const encodePayload = (uid: string, product: string, choice?: string, gift?: boolean): string =>
+  JSON.stringify({ u: uid, p: product, ...(choice ? { c: choice } : {}), ...(gift ? { g: 1 } : {}) });
 
 export async function POST(request: Request): Promise<Response> {
   let body: Body;
@@ -41,6 +43,14 @@ export async function POST(request: Request): Promise<Response> {
   if (!(await rateLimit().limit(`pay:${uid}`)).success) return json({ error: "slow down" }, 429);
 
   if (body.action === "entitlements") return json(await entitlements(uid));
+
+  // --- redeeming a gift ------------------------------------------------------
+  if (body.action === "claim") {
+    const code = String(body.code ?? "");
+    if (!/^[0-9a-f]{16}$/.test(code)) return json({ error: "bad code" }, 400);
+    const g = await claimGift(code, uid);
+    return g ? json({ claimed: g }) : json({ error: "already claimed" }, 409);
+  }
 
   // --- invoice ---------------------------------------------------------------
   let product: Product | undefined;
@@ -69,6 +79,10 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  // A continue is consumed by the run that is happening right now, so there is
+  // nobody else it could be for.
+  const gift = body.gift === true && !product.id.startsWith("revive");
+
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return json({ error: "payments unavailable" }, 503);
 
@@ -76,9 +90,9 @@ export async function POST(request: Request): Promise<Response> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      title: product.title,
-      description: choice ? `${product.desc} — ${choice.toUpperCase()}` : product.desc,
-      payload: encodePayload(uid, product.id, choice),
+      title: gift ? `Gift: ${product.title}` : product.title,
+      description: (choice ? `${product.desc} — ${choice.toUpperCase()}` : product.desc) + (gift ? " — for a friend" : ""),
+      payload: encodePayload(uid, product.id, choice, gift),
       // XTR is Stars. It takes no provider token, and the amount is a count of
       // Stars rather than the usual minor currency units.
       currency: "XTR",
@@ -88,5 +102,5 @@ export async function POST(request: Request): Promise<Response> {
 
   const out = (await r?.json().catch(() => null)) as { ok?: boolean; result?: string } | null;
   if (!out?.ok || !out.result) return json({ error: "invoice failed" }, 502);
-  return json({ link: out.result, stars: product.stars, product: product.id });
+  return json({ link: out.result, stars: product.stars, product: product.id, gift });
 }

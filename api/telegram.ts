@@ -19,6 +19,7 @@ interface Payload {
   u?: string;
   p?: string;
   c?: string;
+  g?: number; // bought as a gift: mints a code rather than granting to the buyer
 }
 
 export function parsePayload(raw: unknown): Payload | null {
@@ -78,7 +79,7 @@ export async function POST(request: Request): Promise<Response> {
     // The payload names the buyer, but the message says who actually paid. If
     // they disagree, believe the message: the payload rode through a client.
     if (p?.p && buyer && paid.telegram_payment_charge_id) {
-      await credit(buyer, p.p, p.c, String(paid.telegram_payment_charge_id));
+      await credit(buyer, p.p, p.c, String(paid.telegram_payment_charge_id), p.g === 1);
     }
     return new Response("ok");
   }

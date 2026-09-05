@@ -12,6 +12,14 @@ export interface Entitlements {
   rerolls: number;
   unlocked: string[];
   skins: string[];
+  gifts: Gift[];
+}
+
+export interface Gift {
+  code: string;
+  product: string;
+  choice?: string;
+  to?: string; // set once a friend has redeemed it
 }
 
 async function post(body: unknown): Promise<Record<string, unknown> | null> {
@@ -38,10 +46,20 @@ export const reviveStars = (n: number): number => revivePrice(n).stars;
  * Buys something and resolves true only once Telegram reports it paid. The
  * server has already banked the entitlement by then, via the webhook.
  */
-export async function buy(product: ProductId, opts: { choice?: string; reviveN?: number } = {}): Promise<boolean> {
+export async function buy(
+  product: ProductId,
+  opts: { choice?: string; reviveN?: number; gift?: boolean } = {},
+): Promise<boolean> {
   const res = await post({ action: "invoice", product, ...opts });
   const link = typeof res?.link === "string" ? res.link : null;
   return link ? payWithStars(link) : false;
+}
+
+/** Redeems a gift code. Null when it was already taken, or never existed. */
+export async function claimGift(code: string): Promise<Gift | null> {
+  const res = await post({ action: "claim", code });
+  const g = res?.claimed as Gift | undefined;
+  return g?.product ? g : null;
 }
 
 export async function fetchEntitlements(): Promise<Entitlements | null> {

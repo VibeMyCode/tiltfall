@@ -290,7 +290,53 @@ canvas#scene {
   text-align: center;
 }
 .skin-card .swatch { width: 40px; height: 40px; }
-.skin-card b { color: var(--rare-c); font-size: 9.5px; }
+.skin-card { position: relative; }
+.skin-act {
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--rare-c);
+  font: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 0 0;
+  cursor: pointer;
+}
+.skin-act:disabled { color: #8fa2c9; opacity: 0.65; cursor: default; }
+/* In the corner rather than beside the main action: at four columns on a phone
+   a card is ~85px wide and two side-by-side buttons would both be unhittable. */
+.skin-gift {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.skin-gift:active { transform: scale(0.9); }
+
+.gift-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 11px;
+  border: 1.5px solid #ffc44d;
+  border-radius: 10px;
+  background: #10162c;
+  color: #dfe9ff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.gift-row b { color: #ffc44d; letter-spacing: 0.08em; }
 .skin-card.sel { box-shadow: 0 0 0 2px #fff inset; }
 .skin-card:disabled { opacity: 0.4; cursor: default; }
 .skin-card:not(:disabled):active { transform: scale(0.95); }

@@ -21,7 +21,7 @@ interface TgWebApp {
   openLink?: (url: string, opts?: { try_instant_view?: boolean }) => void;
   openInvoice?: (url: string, cb: (status: "paid" | "cancelled" | "failed" | "pending") => void) => void;
   shareMessage?: (id: string, cb?: (ok: boolean) => void) => void;
-  initDataUnsafe?: { user?: { id: number; first_name?: string; username?: string } };
+  initDataUnsafe?: { user?: { id: number; first_name?: string; username?: string }; start_param?: string };
   HapticFeedback?: TgHaptic;
   CloudStorage?: TgCloud;
   viewportStableHeight?: number;
@@ -61,6 +61,24 @@ export function initTelegram(): void {
 // Telegram client fills it, so outside Telegram there is nobody to identify
 // and the leaderboard simply stays read-only.
 export const initDataRaw = (): string | null => tg()?.initData || null;
+
+/**
+ * The deep-link payload a Mini App is opened with: t.me/bot/app?startapp=X.
+ * Reading it from initDataUnsafe is fine — nothing is trusted on the strength
+ * of it, the code it carries is redeemed by the server against its own ledger.
+ */
+export const startParam = (): string | null => tg()?.initDataUnsafe?.start_param || null;
+
+// Hands a gift link to the Telegram share sheet, so the buyer picks the friend
+// in Telegram's own chat list rather than copying a URL around.
+export function shareGift(link: string, what: string): void {
+  const app = tg();
+  const url =
+    `https://t.me/share/url?url=${encodeURIComponent(link)}` +
+    `&text=${encodeURIComponent(`A ${what} for you in TILTFALL. Tap to claim it.`)}`;
+  if (app?.openTelegramLink) app.openTelegramLink(url);
+  else window.open(url, "_blank");
+}
 
 // Opens a Stars invoice and resolves once Telegram says what happened. Only
 // "paid" is a yes; "pending" is not, because a purchase that has not completed

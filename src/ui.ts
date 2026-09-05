@@ -23,6 +23,7 @@ export interface ShopModel {
 // the menu had a ball with rings on it looking like purple stripes. This
 // projects it the way the camera does: a pixel at radius r on the disc lies
 // asin(r) down from the pole, and the pole is the BOTTOM of the texture.
+const GIFT_GLYPH = "\u{1F381}";
 const PREVIEW = 96;
 const TEX = 128;
 
@@ -120,7 +121,11 @@ export interface ResultsModel {
     forSale: () => SkinOffer[];
     buyable: boolean; // false outside Telegram, where there is nobody to charge
     buy: (id: string) => Promise<boolean>;
+    gift: (id: string) => Promise<boolean>;
   };
+  // Bought for somebody else and not yet handed over. A share cancelled once
+  // must not lose the purchase, so the link stays available here.
+  gifts: { unsent: () => { code: string; name: string }[]; share: (code: string) => void };
   daily: {
     // A getter, not a snapshot — claiming must refresh the rows (owner bug:
     // the +90 button stayed after claiming).
@@ -332,6 +337,7 @@ export function createUI(h: UIHandlers): UI {
           <div class="section-head">SKINS</div>
           <div class="skin-grid" id="skin-grid"></div>
         </div>
+        <div class="section daily hidden" id="gift-box"></div>
         <div class="section" id="shop-section">
           <div class="section-head">BOOSTERS</div>
           <div class="shop-grid" id="shop-grid"></div>
@@ -510,30 +516,61 @@ export function createUI(h: UIHandlers): UI {
     const sg = el("skin-grid");
     sg.innerHTML = "";
     for (const o of m.skins.forSale()) {
-      const btn = document.createElement("button");
-      btn.className = `skin-card ${o.rarity}${o.id === m.skins.current() ? " sel" : ""}`;
-      btn.appendChild(skinSwatch(o.id));
+      const card = document.createElement("div");
+      card.className = `skin-card ${o.rarity}${o.id === m.skins.current() ? " sel" : ""}`;
+      card.appendChild(skinSwatch(o.id));
       const cap = document.createElement("span");
       cap.textContent = o.name;
-      const tag = document.createElement("b");
-      tag.textContent = o.owned ? (o.id === m.skins.current() ? "WORN" : "WEAR") : `${o.stars} ★`;
-      btn.append(cap, tag);
       // Owned means the button wears it; unowned means it buys it. Outside
       // Telegram there is nobody to charge, so an unowned one is just shown.
-      btn.disabled = !o.owned && !m.skins.buyable;
-      btn.addEventListener("click", () => {
+      const act = document.createElement("button");
+      act.className = "skin-act";
+      act.textContent = o.owned ? (o.id === m.skins.current() ? "WORN" : "WEAR") : `${o.stars} ★`;
+      act.disabled = !o.owned && !m.skins.buyable;
+      act.addEventListener("click", () => {
         if (o.owned) {
           m.skins.select(o.id);
           renderPanels();
           return;
         }
-        btn.disabled = true;
+        act.disabled = true;
         void m.skins.buy(o.id).then((ok) => {
           if (ok) renderPanels();
-          else btn.disabled = false;
+          else act.disabled = false;
         });
       });
-      sg.appendChild(btn);
+      card.append(cap, act);
+      // Gifting one you already own is most of the point, so the corner button
+      // is on every card rather than only on the ones you have not bought.
+      if (m.skins.buyable) {
+        const gift = document.createElement("button");
+        gift.className = "skin-gift";
+        gift.title = `Gift ${o.name} — ${o.stars} ★`;
+        gift.textContent = GIFT_GLYPH;
+        gift.addEventListener("click", () => {
+          gift.disabled = true;
+          void m.skins.gift(o.id).then(() => {
+            gift.disabled = false;
+            renderPanels();
+          });
+        });
+        card.appendChild(gift);
+      }
+      sg.appendChild(card);
+    }
+
+    // Gifts bought and not yet sent. Hidden entirely when there are none —
+    // which is almost always — rather than sitting there as an empty heading.
+    const gb = el("gift-box");
+    const unsent = m.gifts.unsent();
+    gb.classList.toggle("hidden", unsent.length === 0);
+    gb.innerHTML = unsent.length ? `<div class="section-head">GIFTS TO SEND</div>` : "";
+    for (const g of unsent) {
+      const row = document.createElement("button");
+      row.className = "gift-row";
+      row.innerHTML = `<span>${GIFT_GLYPH} ${g.name}</span><b>SEND</b>`;
+      row.addEventListener("click", () => m.gifts.share(g.code));
+      gb.appendChild(row);
     }
 
     // Shop.

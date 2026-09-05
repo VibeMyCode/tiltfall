@@ -6,6 +6,7 @@
 // cannot confirm would make that verification meaningless.
 //
 // The leading underscore keeps Vercel from treating this as an endpoint.
+import { createHash } from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
@@ -27,6 +28,20 @@ export const rateLimit = (): Ratelimit =>
 const wallet = (uid: string) => `pay:${uid}`;
 const unlocks = (uid: string) => `unlocked:${uid}`;
 const owned = (uid: string) => `skins:${uid}`;
+const giftKey = (code: string) => `gift:${code}`;
+const minted = (uid: string) => `gifts:${uid}`;
+
+export interface Gift {
+  code: string;
+  product: string;
+  choice?: string;
+  to?: string; // who claimed it, absent while it is still unsent
+}
+
+// Derived from the charge rather than random, so a redelivered payment mints
+// the SAME gift instead of a second one. Half a SHA-256 is short enough for a
+// deep link and far too wide to guess.
+export const giftCode = (chargeId: string): string => createHash("sha256").update(chargeId).digest("hex").slice(0, 16);
 
 export interface Entitlements {
   revives: number; // unspent continues, bought at escalating prices
@@ -34,14 +49,27 @@ export interface Entitlements {
   rerolls: number;
   unlocked: string[]; // boosters opened with Stars rather than levels
   skins: string[]; // skins bought with Stars rather than levelled into
+  gifts: Gift[]; // bought FOR someone else, so the buyer can send the link again
 }
 
 export async function entitlements(uid: string): Promise<Entitlements> {
-  const [h, u, sk] = await Promise.all([
+  const [h, u, sk, codes] = await Promise.all([
     db().hgetall<Record<string, string>>(wallet(uid)),
     db().smembers(unlocks(uid)),
     db().smembers(owned(uid)),
+    db().smembers(minted(uid)),
   ]);
+  const gifts = (
+    await Promise.all(
+      (codes ?? []).map(async (code) => {
+        const g = await db().hgetall<Record<string, string>>(giftKey(String(code)));
+        const gift: Gift | null = g?.product
+          ? { code: String(code), product: g.product, choice: g.choice, to: g.to }
+          : null;
+        return gift;
+      }),
+    )
+  ).filter((g): g is Gift => g !== null);
   const once: Record<string, number> = {};
   for (const [k, v] of Object.entries(h ?? {})) {
     if (k.startsWith("once:")) once[k.slice(5)] = Number(v) || 0;
@@ -52,6 +80,7 @@ export async function entitlements(uid: string): Promise<Entitlements> {
     rerolls: Number(h?.reroll ?? 0),
     unlocked: (u ?? []).map(String),
     skins: (sk ?? []).map(String),
+    gifts,
   };
 }
 
@@ -66,17 +95,39 @@ export async function credit(
   product: string,
   choice: string | undefined,
   chargeId: string,
+  gift = false,
 ): Promise<boolean> {
   // What the charge bought is stored with it, so a refund can undo precisely
   // this and nothing else.
   const fresh = await db().set(
     `charge:${chargeId}`,
-    JSON.stringify({ uid, product, choice }),
+    JSON.stringify({ uid, product, choice, gift }),
     { nx: true, ex: 60 * 60 * 24 * 365 },
   );
   if (!fresh) return false;
-  await grant(uid, product, choice, 1);
+  // A gift buys nothing for the buyer: it mints a code somebody else redeems.
+  if (gift) {
+    const code = giftCode(chargeId);
+    await db().hset(giftKey(code), { product, from: uid, ...(choice ? { choice } : {}) });
+    await db().sadd(minted(uid), code);
+  } else {
+    await grant(uid, product, choice, 1);
+  }
   return true;
+}
+
+/**
+ * Redeems a gift. The claim is a single HSETNX, so of two friends opening the
+ * same link at once exactly one gets the goods — checking first and writing
+ * after would hand it to both.
+ * Returns what was granted, or null when the code is unknown or already taken.
+ */
+export async function claimGift(code: string, uid: string): Promise<Gift | null> {
+  const rec = await db().hgetall<Record<string, string>>(giftKey(code));
+  if (!rec?.product) return null;
+  if (!(await db().hsetnx(giftKey(code), "to", uid))) return null;
+  await grant(uid, rec.product, rec.choice, 1);
+  return { code, product: rec.product, choice: rec.choice, to: uid };
 }
 
 /**
@@ -86,11 +137,22 @@ export async function credit(
  * Idempotent: the charge record is deleted, so a redelivered refund is a no-op.
  */
 export async function revoke(chargeId: string): Promise<boolean> {
-  const raw = await db().get<string | { uid: string; product: string; choice?: string }>(`charge:${chargeId}`);
+  type Charge = { uid: string; product: string; choice?: string; gift?: boolean };
+  const raw = await db().get<string | Charge>(`charge:${chargeId}`);
   if (!raw) return false;
-  const rec = typeof raw === "string" ? (JSON.parse(raw) as { uid: string; product: string; choice?: string }) : raw;
+  const rec = typeof raw === "string" ? (JSON.parse(raw) as Charge) : raw;
   await db().del(`charge:${chargeId}`);
-  await grant(rec.uid, rec.product, rec.choice, -1);
+  if (rec.gift) {
+    // Take it back from whoever redeemed it — otherwise buy, gift, refund is a
+    // way to hand a friend something nobody paid for.
+    const code = giftCode(chargeId);
+    const g = await db().hgetall<Record<string, string>>(giftKey(code));
+    if (g?.to) await grant(g.to, rec.product, rec.choice, -1);
+    await db().del(giftKey(code));
+    await db().srem(minted(rec.uid), code);
+  } else {
+    await grant(rec.uid, rec.product, rec.choice, -1);
+  }
   return true;
 }
 
