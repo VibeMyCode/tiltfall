@@ -2,11 +2,18 @@
 // DynamicTexture on the ball) and by the UI (as swatch previews), so the
 // menu always shows the REAL pattern (owner: swatches were flat colors).
 
+export type Rarity = "common" | "rare" | "epic" | "legendary";
+
 export interface SkinDef {
   name: string;
   rgb: [number, number, number];
   emissive: number;
+  // Procedural skins draw themselves; shop skins name a file in public/skins.
+  // A skin has one or the other, never both.
   pattern?: (ctx: CanvasRenderingContext2D, s: number) => void;
+  image?: string;
+  rarity?: Rarity;
+  stars?: number; // absent on the procedural skins, which levels hand out
 }
 
 export const SKINS: Record<string, SkinDef> = {
@@ -135,6 +142,48 @@ export const SKINS: Record<string, SkinDef> = {
 };
 
 // Paint a skin into any 2D context (ball texture or menu swatch).
+// --- SHOP SKINS -----------------------------------------------------------
+// Painted textures rather than procedural patterns, bought with Stars. Their
+// rgb stays white so the image carries the colour, and emissive is low: these
+// are far brighter than the procedural set, and the glow layer would bloom a
+// saturated texture into a white ball.
+const SHOP: Record<string, SkinDef> = {
+  com_beach_ball: { name: "BEACH BALL", rgb: [1, 1, 1], emissive: 0.15, image: "com-beach-ball", rarity: "common", stars: 25 },
+  com_cherry_stripes: { name: "CHERRY STRIPES", rgb: [1, 1, 1], emissive: 0.15, image: "com-cherry-stripes", rarity: "common", stars: 25 },
+  com_lime_zigzag: { name: "LIME ZIGZAG", rgb: [1, 1, 1], emissive: 0.15, image: "com-lime-zigzag", rarity: "common", stars: 25 },
+  com_pink_clouds: { name: "PINK CLOUDS", rgb: [1, 1, 1], emissive: 0.15, image: "com-pink-clouds", rarity: "common", stars: 25 },
+  com_polka_dots: { name: "POLKA DOTS", rgb: [1, 1, 1], emissive: 0.15, image: "com-polka-dots", rarity: "common", stars: 25 },
+  epic_circuit_traces: { name: "CIRCUIT TRACES", rgb: [1, 1, 1], emissive: 0.15, image: "epic-circuit-traces", rarity: "epic", stars: 120 },
+  epic_galaxy_swirl: { name: "GALAXY SWIRL", rgb: [1, 1, 1], emissive: 0.15, image: "epic-galaxy-swirl", rarity: "epic", stars: 120 },
+  epic_molten_cracks: { name: "MOLTEN CRACKS", rgb: [1, 1, 1], emissive: 0.15, image: "epic-molten-cracks", rarity: "epic", stars: 120 },
+  epic_plasma_arc: { name: "PLASMA ARC", rgb: [1, 1, 1], emissive: 0.15, image: "epic-plasma-arc", rarity: "epic", stars: 120 },
+  epic_rainbow: { name: "RAINBOW", rgb: [1, 1, 1], emissive: 0.15, image: "epic-rainbow", rarity: "epic", stars: 120 },
+  legend_aurora_ribbons: { name: "AURORA RIBBONS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-aurora-ribbons", rarity: "legendary", stars: 250 },
+  legend_byakugan: { name: "BYAKUGAN", rgb: [1, 1, 1], emissive: 0.15, image: "legend-byakugan", rarity: "legendary", stars: 250 },
+  legend_crystal_facets: { name: "CRYSTAL FACETS", rgb: [1, 1, 1], emissive: 0.15, image: "legend-crystal-facets", rarity: "legendary", stars: 250 },
+  legend_dark_eye: { name: "DARK EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-dark-eye", rarity: "legendary", stars: 250 },
+  legend_liquid_gold: { name: "LIQUID GOLD", rgb: [1, 1, 1], emissive: 0.15, image: "legend-liquid-gold", rarity: "legendary", stars: 250 },
+  legend_living_eye: { name: "LIVING EYE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-living-eye", rarity: "legendary", stars: 250 },
+  legend_rinnegan: { name: "RINNEGAN", rgb: [1, 1, 1], emissive: 0.15, image: "legend-rinnegan", rarity: "legendary", stars: 250 },
+  legend_sage: { name: "SAGE", rgb: [1, 1, 1], emissive: 0.15, image: "legend-sage", rarity: "legendary", stars: 250 },
+  legend_sharingan_4: { name: "SHARINGAN 4", rgb: [1, 1, 1], emissive: 0.15, image: "legend-sharingan-4", rarity: "legendary", stars: 250 },
+  rar_blobs_magenta: { name: "BLOBS MAGENTA", rgb: [1, 1, 1], emissive: 0.15, image: "rar-blobs-magenta", rarity: "rare", stars: 60 },
+  rar_checkers: { name: "CHECKERS", rgb: [1, 1, 1], emissive: 0.15, image: "rar-checkers", rarity: "rare", stars: 60 },
+  rar_eyes: { name: "EYES", rgb: [1, 1, 1], emissive: 0.15, image: "rar-eyes", rarity: "rare", stars: 60 },
+  rar_tiger: { name: "TIGER", rgb: [1, 1, 1], emissive: 0.15, image: "rar-tiger", rarity: "rare", stars: 60 },
+  rar_watermelon: { name: "WATERMELON", rgb: [1, 1, 1], emissive: 0.15, image: "rar-watermelon", rarity: "rare", stars: 60 },
+};
+
+// One table for the game to look up, two sources: levels grant the procedural
+// ones, Stars buy the painted ones.
+Object.assign(SKINS, SHOP);
+
+export const SHOP_SKINS: string[] = Object.keys(SHOP);
+export const skinImage = (id: string): string | null =>
+  SKINS[id]?.image ? `/skins/${SKINS[id].image}.jpg` : null;
+export const skinThumb = (id: string): string | null =>
+  SKINS[id]?.image ? `/skins/t/${SKINS[id].image}.jpg` : null;
+
 export function drawSkin(ctx: CanvasRenderingContext2D, id: string, size: number): void {
   const def = SKINS[id] ?? SKINS.core;
   if (def.pattern) {

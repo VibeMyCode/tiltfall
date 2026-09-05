@@ -15,12 +15,14 @@ import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CONFIG } from "./config.js";
 import type { BlockDef, BlockType } from "./levelgen.js";
 import type { SimEvent } from "./sim.js";
-import { SKINS, drawSkin } from "./skins.js";
+import { SKINS, drawSkin, skinImage } from "./skins.js";
 import { FIXED_BLOCK_RGB, paletteAt } from "./biomes.js";
 
 interface Shard {
@@ -353,16 +355,29 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   shieldMesh.material = shieldMat;
   shieldMesh.setEnabled(false);
 
-  const skinTextures = new Map<string, DynamicTexture>();
-  function skinTexture(id: string): DynamicTexture | null {
-    if (!SKINS[id]?.pattern) return null;
-    let t = skinTextures.get(id);
-    if (!t) {
-      t = new DynamicTexture(`skin-${id}`, 256, scene, false);
-      drawSkin(t.getContext() as unknown as CanvasRenderingContext2D, id, 256);
-      t.update();
+  const skinTextures = new Map<string, BaseTexture>();
+  // Procedural skins are drawn once into a canvas; shop skins are a painted
+  // file. Either way the texture is cached, because setSkin runs on every boot
+  // and on every purchase.
+  function skinTexture(id: string): BaseTexture | null {
+    const cached = skinTextures.get(id);
+    if (cached) return cached;
+
+    const url = skinImage(id);
+    if (url) {
+      // Only the WORN skin is fetched — the shop shows thumbnails, so opening
+      // it does not pull a megabyte of full-size textures.
+      const t = new Texture(url, scene);
+      t.wrapU = Texture.WRAP_ADDRESSMODE; // the seam runs down the back
       skinTextures.set(id, t);
+      return t;
     }
+
+    if (!SKINS[id]?.pattern) return null;
+    const t = new DynamicTexture(`skin-${id}`, 256, scene, false);
+    drawSkin(t.getContext() as unknown as CanvasRenderingContext2D, id, 256);
+    t.update();
+    skinTextures.set(id, t);
     return t;
   }
 
