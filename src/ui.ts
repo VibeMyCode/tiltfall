@@ -6,6 +6,7 @@ import { isTouch } from "./input.js";
 import { fetchBoard, type BoardRow, type SubmitResult } from "./board.js";
 import type { DailyTask } from "./meta.js";
 import { SKINS, drawSkin, skinImage, skinThumb, type Rarity } from "./skins.js";
+import { backButton } from "./telegram.js";
 
 export interface ShopModel {
   bank: number;
@@ -569,7 +570,8 @@ export function createUI(h: UIHandlers): UI {
     const worn = o.id === model?.skins.current();
     const main = el("sheet-main") as HTMLButtonElement;
     main.className = `sheet-main ${o.rarity ?? "free"}`;
-    main.textContent = worn ? "WORN" : o.owned ? "WEAR IT" : o.needsLevel ? `LEVEL ${o.needsLevel}` : `BUY · ${o.stars} ★`;
+    // EQUIPPED, not WORN: "worn" reads as worn-out to most players.
+    main.textContent = worn ? "EQUIPPED" : o.owned ? "EQUIP" : o.needsLevel ? `LEVEL ${o.needsLevel}` : `BUY · ${o.stars} ★`;
     main.disabled = worn || (!o.owned && (o.needsLevel !== null || !model?.skins.buyable));
 
     // Gifting one you already own is most of the point, so this stays offered
@@ -629,7 +631,7 @@ export function createUI(h: UIHandlers): UI {
       name.className = "sk-name";
       name.textContent = o.name;
       const tag = document.createElement("b");
-      tag.textContent = worn ? "WORN" : o.owned ? "WEAR" : o.needsLevel ? `LVL ${o.needsLevel}` : `${o.stars} ★`;
+      tag.textContent = worn ? "EQUIPPED" : o.owned ? "EQUIP" : o.needsLevel ? `LVL ${o.needsLevel}` : `${o.stars} ★`;
       card.append(name, tag);
       card.addEventListener("click", () => openSheet(o));
       grid.appendChild(card);
@@ -659,10 +661,15 @@ export function createUI(h: UIHandlers): UI {
     if (r) model = r;
     storeView.classList.remove("hidden");
     renderStore();
+    // The store fills the screen, so in Telegram its header sits under the
+    // client's own controls; the native back arrow is always reachable. It
+    // peels one layer at a time: the sheet first, then the store.
+    backButton(() => (sheetSkin ? closeSheet() : closeStore()));
   };
   const closeStore = (): void => {
     closeSheet();
     storeView.classList.add("hidden");
+    backButton(null);
   };
   storeView.querySelector<HTMLButtonElement>("#store-back")!.addEventListener("click", closeStore);
   // The sheet's backdrop is the store behind it; tapping it closes the sheet

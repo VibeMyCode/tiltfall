@@ -816,6 +816,9 @@ body.titlescreen .hud, body.titlescreen .booster-bar { display: none; }
 /* Telegram gives the app the full screen: keep our chrome clear of theirs */
 body.in-telegram .hud { top: calc(env(safe-area-inset-top, 8px) + 34px); }
 body.in-telegram .booster-bar { top: calc(env(safe-area-inset-top, 8px) + 78px); }
+/* The store fills the screen, so its header needs the same clearance as the
+   HUD — without it the back button sat under Telegram's own buttons. */
+body.in-telegram .store-head { padding-top: calc(env(safe-area-inset-top, 8px) + 34px); }
 
 /* Biome banner — a brief title card when the tower changes its skin */
 .biome-banner {

@@ -27,6 +27,7 @@ interface TgWebApp {
   viewportStableHeight?: number;
   platform?: string;
   version?: string;
+  BackButton?: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };
 }
 
 const tg = (): TgWebApp | undefined => (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
@@ -55,6 +56,26 @@ export function initTelegram(): void {
   attempt(() => app.setHeaderColor?.("#0b1020"));
   attempt(() => app.setBackgroundColor?.("#0b1020"));
   document.body.classList.add("in-telegram");
+}
+
+// Telegram's own back arrow in its header. In fullscreen the client draws its
+// controls over the top of the page, which is exactly where an in-page back
+// button ends up — the native one is the one a player can always reach.
+// Null hides it. No-op in a browser.
+let backHandler: (() => void) | null = null;
+export function backButton(handler: (() => void) | null): void {
+  const bb = tg()?.BackButton;
+  if (!bb || !inTelegram()) return;
+  attempt(() => {
+    if (backHandler) bb.offClick(backHandler);
+    backHandler = handler;
+    if (handler) {
+      bb.onClick(handler);
+      bb.show();
+    } else {
+      bb.hide();
+    }
+  });
 }
 
 // The signed blob the server checks to learn who is submitting. Only a real
