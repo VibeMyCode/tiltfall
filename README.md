@@ -1,37 +1,126 @@
 # TILTFALL
 
-Babylon.js + Vite + TypeScript game built to `SPEC.md`. Engine guide: `babylon.md`.
+Steer a falling ball down an endless tower. Smash blocks for combos, dodge the
+mines, ride boosters deeper through five biomes. Ships as a Telegram Mini App
+([@tiltfall_bot](https://t.me/tiltfall_bot/play)) and as a plain web page —
+every Telegram call is guarded, so the browser build is the same game minus
+payments and the leaderboard.
 
-Run it: `npm install` · `npm run dev` (served on 0.0.0.0:5173) · `npm test` · `npm run build`
+Babylon.js + Vite + TypeScript, built to `SPEC.md`. Engine guide: `babylon.md`.
 
-## Status
+`npm install` · `npm run dev` (0.0.0.0:5173) · `npm test` · `npm run build`
 
-**Shipped (M0-M5):** endless generative tower (fresh random seed per run,
-tiers streamed as you fall), mines end the run, jump with cooldown/charges,
-BANK economy — score funds boosters (one-shot QUAKE/CHAIN, run-long ×2/HEAVY/
-AGILITY, instant SHIELD) and 15 player levels (jump power, procedural skins,
-free shields, extra jump charge, booster unlocks cheapest-first), daily tasks,
-title screen, synthesized WebAudio SFX (zero audio files), PWA manifest for
-"add to home screen". Tests: 18 unit (determinism, banned APIs, boosters, jump,
-mines/shields, meta/daily) + a headless suite driving a real-GPU browser.
+## What is built
 
-## Build notes (durable — read before writing code)
+**The run.** Endless generative tower, fresh seed each time, tiers streamed as
+you fall. Mines end it. Glass is punched through, stone bounces, bombs brake.
+Five depth biomes crossfade sky, fog, walls and block tints. The ball rolls as
+it falls, so the whole skin comes past.
 
-- **Babylon 9 has no `exports` map**: import by actual camelCase file paths, e.g.
-  `@babylonjs/core/Cameras/arcRotateCamera`, and `Scene` lives at the package root
-  (`@babylonjs/core/scene`). Confirm IMPORT PATHS (and nothing else) against
-  `node_modules/@babylonjs/core` when unsure. Never read Babylon sources to derive
-  behavior, rotation signs, or conventions — resolve those by running the game and
-  flipping a constant if it looks wrong.
-- **npm cache is EPERM in this sandbox**: run installs with
-  `npm install --cache /tmp/dsh-npm-cache`.
-- Headless-capture readiness: `src/main.ts` sets a `__DSH_READY` flag on the first
-  rendered frame — gate screenshots/videos on it.
+**The meta.** Score banks into coins; coins buy boosters (one-shot QUAKE and
+CHAIN BOMB, run-long ×2/HEAVY/AGILITY, instant SHIELD) and 15 player levels
+that hand out jump power, free shields, an extra jump charge, skins, and the
+boosters themselves cheapest-first. Three daily tasks pay 1000 each.
+
+**Telegram.** SDK bootstrap, haptics, CloudStorage progress mirrored across
+devices, a bot that answers `/start` with a launch button, and a SHARE that
+posts the run.
+
+**Leaderboard.** Server-side, and it does not take your word for it — see
+*Fairness* below.
+
+**Stars.** Continue a dead run (30/60/120, dearer each time within the run),
+open a booster ahead of its level, reroll the daily tasks, buy any of 24 skins,
+or buy one as a gift for a friend.
+
+**Skins.** 24 painted textures across four rarities, plus the free ones levels
+hand out, in their own store screen. Four are drawn in code, not painted: the
+eyes.
+
+Tests: 72 across 15 files — determinism, replay verification, initData
+signatures, the product catalogue, the skin table, palettes, level furniture,
+cross-device sync, banned APIs, ESM import specifiers.
+
+## How it is put together
+
+| | |
+| --- | --- |
+| `src/sim.ts` | the whole game, deterministic, no DOM and no renderer |
+| `src/render.ts` | Babylon: tower, ball, shards, trails, biome palettes |
+| `src/ui.ts` | every screen — HUD, results, menu, store, leaderboard, sheets |
+| `src/main.ts` | wiring, persistence, the run loop |
+| `src/replay.ts` | records inputs, re-runs them to a score |
+| `api/` | Vercel functions: leaderboard, Stars, the bot webhook |
+
+`api/_store.ts` is the ledger — Upstash Redis, wallets and entitlements.
+`api/_initdata.ts` is the only place a Telegram identity is verified. Both are
+underscore-prefixed so Vercel does not serve them as endpoints.
+
+Environment (set in Vercel, not in the repo): `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_WEBHOOK_SECRET`. Redis comes from the Upstash integration's own vars.
+
+## Fairness
+
+The leaderboard is the reason several things are shaped the way they are.
+
+- **Who** you are comes from Telegram's initData HMAC, never from a field in
+  the request body.
+- **What** you scored is believed only after the server re-runs the sim from
+  the recorded inputs. A score above your verified best is refused without a
+  proof; one at or below it is clamped to that best.
+- That only works because the sim is deterministic: fixed 120 Hz, `dt: 1/120`,
+  no `Math.random`, no wall clock, and no transcendental `Math` either — those
+  are implementation-approximated and differ between JS engines, so the
+  server's replay would disagree with the phone that produced it.
+  `tests/determinism.test.ts` and `tests/banned-api.test.ts` keep it that way.
+  **Anything that breaks determinism breaks the leaderboard.**
+- Paid continues are counted against a server-side ledger, so a run carried on
+  three times cannot be reported as one clean run.
+
+## Things that cost us a production incident
+
+Durable, non-obvious, and cheaper to read than to rediscover.
+
+- **`api/` imports need explicit `.js`.** Vercel transpiles those files one by
+  one; Node will not guess extensions for relative imports. `vercel dev`
+  resolves them either way, which is exactly how a crash reached production.
+  `tests/imports.test.ts` guards it. `api/` is in the tsconfig `include` now —
+  it was not, which is why nothing caught it.
+- **Babylon's sphere runs V bottom-up.** The BOTTOM edge of a texture is the
+  pole facing the camera. Get it backwards and the design lands on the far
+  side of the ball.
+- **The camera is 34° off the pole** (`camHeight` 1500 over `camDist` 1020),
+  so what faces the player is not the top of the texture.
+- **Skin previews project the equator**, not the pole — the pole is the single
+  point where every texture column converges, and a pole-on swatch turns
+  stripes into a whirlpool. The four eye skins are the exception and carry
+  `polar: true`.
+- **Telegram CloudStorage keys allow only `A-Za-z0-9_-`.** Dotted keys are
+  rejected silently; `cloudKey()` maps them.
+- **Babylon 9 has no `exports` map**: import by real camelCase paths, e.g.
+  `@babylonjs/core/Cameras/arcRotateCamera`; `Scene` is at the package root.
+  Read `node_modules/@babylonjs/core` to confirm an import path exists — never
+  to derive behaviour. Sign conventions get settled by running the game.
+- **A Vercel 403 may be about your IP, not the project.** A flagged VPN exit
+  node gets challenged, `api.vercel.com` included. curl from it proves nothing.
 
 ## Assets
 
-Generated assets live under `src/assets/` (loaded via Vite). No paid generation spent yet — `$asset-gen` requires owner confirmation first.
+| Asset | Kind | Source | Status |
+| --- | --- | --- | --- |
+| `public/skins/*.jpg` | 20 ball textures, 512px | image generator, prompt in git history | shipped, 960 KB with thumbs |
+| `public/skins/t/*.jpg` | 128px thumbnails | derived, used by the store grid | shipped |
+| the four eyes | canvas patterns in `src/skins.ts` | drawn in code | shipped |
+| `art/skins/` | 1024px masters | kept out of the build | local only, 4.7 MB |
+| `press/` | promo card for BotFather | generated | local only |
+| SFX | synthesized WebAudio | `src/sfx.ts`, zero audio files | shipped |
 
-| Asset | Kind | Source / prompt | Status |
-| ----- | ---- | --------------- | ------ |
-| `public/favicon.svg` | icon | Vite template scaffold | present |
+A generator kept tiling the eye textures vertically, which wraps into a
+dartboard on a sphere. An eye is four flat bands and three commas — drawing it
+was shorter than describing it.
+
+## Deploying
+
+Pushing to `master` deploys. `vercel.json` sets the Telegram `frame-ancestors`
+CSP and immutable caching for hashed assets. After changing an environment
+variable, redeploy — functions read them at boot.
