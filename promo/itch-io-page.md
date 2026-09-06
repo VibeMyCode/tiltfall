@@ -46,7 +46,8 @@ for the full version with leaderboard and skins: https://t.me/tiltfall_bot/play
 Free, no ads, no install. Portrait or landscape, phone or desktop.
 
 **Devlog notes (first post):**
-Built with Babylon.js 9 + TypeScript. Pure-TS fixed-timestep sim at 120 Hz,
-no physics engine — collisions, cascade order and break thresholds are all
-hand-rolled and deterministic. Post-launch tuning happens in a single
-config file. More technical detail on the Babylon.js forum post (link).
+Built with Babylon.js + TypeScript. Pure-TS fixed-timestep sim, no physics
+engine — collisions, cascade order and break thresholds are all hand-rolled
+and deterministic; every tower streams from a per-run seed and a run can be
+replayed end to end. Technical write-up on the Babylon.js forum:
+https://forum.babylonjs.com/t/tiltfall-an-endless-falling-ball-arcade-built-with-babylon-js-playable-now-in-browser-telegram/64059
