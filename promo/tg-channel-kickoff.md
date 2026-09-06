@@ -15,7 +15,7 @@ bounce off bumpers, and survive the mines — every run is a brand-new tower.
 Free, no ads, no install:
 → t.me/tiltfall_bot/play
 Web build: tiltfall.vercel.app
-Reply with your best depth. First to tier 50 gets a shoutout. 🏔️
+Reply with your best depth — let's see who goes deepest. 🏔️
 
 **Post 2 — the hook (with og.png):**
 One touch. That's all a mine needs. 💀
@@ -31,8 +31,7 @@ t.me/tiltfall_bot/play
 
 **Post 4 — challenge format (repeatable, weekly):**
 This week's challenge: reach tier ____ using only ____ (e.g. "no jump").
-Screenshot your depth, tag the channel. Best run gets featured + a skin
-gift. Runs end Sunday 20:00 UTC.
+Screenshot your depth, tag the channel. Runs end Sunday 20:00 UTC.
 
 **Comment/reply policy for the channel bot:**
 - Reply to records with a short positive line and the "challenge" link.
