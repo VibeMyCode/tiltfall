@@ -5,7 +5,7 @@ import { BOOSTER_INFO, BOOSTER_ORDER, boosterPrice, type BoosterId } from "./boo
 import { isTouch } from "./input.js";
 import { fetchBoard, type BoardRow, type SubmitResult } from "./board.js";
 import type { DailyTask } from "./meta.js";
-import { SKINS, drawSkin, skinThumb, type Rarity } from "./skins.js";
+import { SKINS, drawSkin, skinImage, skinThumb, type Rarity } from "./skins.js";
 
 export interface ShopModel {
   bank: number;
@@ -23,11 +23,28 @@ export interface ShopModel {
 // the menu had a ball with rings on it looking like purple stripes. This
 // projects it the way the camera does: a pixel at radius r on the disc lies
 // asin(r) down from the pole, and the pole is the BOTTOM of the texture.
-const GIFT_GLYPH = "\u{1F381}";
-const PREVIEW = 96;
-const TEX = 128;
+const GIFT_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<rect x="3.2" y="10.6" width="17.6" height="9.8" rx="1.6" fill="currentColor" opacity=".5"/>' +
+  '<rect x="2.2" y="6.6" width="19.6" height="4.6" rx="1.4" fill="currentColor"/>' +
+  '<path d="M12 6.6v13.8" fill="none" stroke="#151d33" stroke-width="2.1"/>' +
+  '<path d="M12 6.6C10.4 3.2 6.2 3.4 6.6 5.8 6.9 7.6 10 7 12 6.6zm0 0c1.6-3.4 5.8-3.2 5.4-.8-.3 1.8-3.4 1.2-5.4.8z" ' +
+  'fill="currentColor"/></svg>';
 
-function projectBall(src: CanvasImageSource): HTMLCanvasElement {
+const LEVEL_ICON =
+  '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M12 3.2 14.7 9l6.3.7-4.7 4.3 1.3 6.2L12 17.1 6.4 20.2l1.3-6.2L3 9.7 9.3 9z" fill="currentColor"/></svg>';
+
+const CHEVRON =
+  '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M9.5 5.5 16 12l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+  'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const PREVIEW = 96;
+const PREVIEW_BIG = 256; // the sheet shows one ball large, so it gets a real one
+
+function projectBall(src: CanvasImageSource, size: number): HTMLCanvasElement {
+  const PREVIEW = size;
+  const TEX = size; // sampling at the output size: no cheaper, and no softer
   const out = document.createElement("canvas");
   out.width = PREVIEW;
   out.height = PREVIEW;
@@ -66,24 +83,27 @@ function projectBall(src: CanvasImageSource): HTMLCanvasElement {
 // Procedural skins draw themselves; the painted ones have a 128px thumbnail,
 // which is what those were generated for. The painted ones arrive late, so the
 // swatch is a host element the projection drops into once the file has decoded.
-function skinSwatch(id: string): HTMLElement {
+function skinSwatch(id: string, big = false): HTMLElement {
+  const size = big ? PREVIEW_BIG : PREVIEW;
   const host = document.createElement("span");
   host.className = "swatch";
-  const url = skinThumb(id);
+  // The grid uses the 128px thumbnails; the sheet, which shows one ball at
+  // four times that, pulls the full-size master instead of upscaling a thumb.
+  const url = big ? skinImage(id) : skinThumb(id);
   if (!url) {
     const cv = document.createElement("canvas");
-    cv.width = TEX;
-    cv.height = TEX;
+    cv.width = size;
+    cv.height = size;
     const ctx = cv.getContext("2d");
-    if (ctx) drawSkin(ctx, id, TEX);
-    host.appendChild(projectBall(cv));
+    if (ctx) drawSkin(ctx, id, size);
+    host.appendChild(projectBall(cv, size));
     return host;
   }
   const img = new Image();
   img.src = url;
   void img
     .decode()
-    .then(() => host.appendChild(projectBall(img)))
+    .then(() => host.appendChild(projectBall(img, size)))
     .catch(() => {});
   return host;
 }
@@ -91,9 +111,13 @@ function skinSwatch(id: string): HTMLElement {
 export interface SkinOffer {
   id: string;
   name: string;
-  rarity: Rarity;
+  // Null for the skins levels hand out: those are not for sale at any price.
+  rarity: Rarity | null;
   stars: number;
   owned: boolean;
+  // The level that grants it, for a free skin not reached yet. The store shows
+  // the whole catalogue, so a locked one says what it is waiting for.
+  needsLevel: number | null;
 }
 
 export interface ResultsModel {
@@ -115,10 +139,9 @@ export interface ResultsModel {
     buy: () => boolean;
   };
   skins: {
-    unlocked: () => string[];
     current: () => string;
     select: (id: string) => void;
-    forSale: () => SkinOffer[];
+    catalogue: () => SkinOffer[];
     buyable: boolean; // false outside Telegram, where there is nobody to charge
     buy: (id: string) => Promise<boolean>;
     gift: (id: string) => Promise<boolean>;
@@ -146,6 +169,7 @@ export interface UI {
   ) => void;
   showBiome: (name: string) => void;
   showResults: (r: ResultsModel) => void;
+  showStore: (r: ResultsModel) => void;
   hideResults: () => void;
   setRank: (r: SubmitResult | null) => void;
   showTitle: () => void;
@@ -178,6 +202,7 @@ export interface UIHandlers {
   // Who you are and what you have carried in — read once when the title screen
   // is built, which is the only time it is shown.
   account: () => { name: string | null; level: number; bank: number; skin: string };
+  onStore: () => void;
 }
 
 // Same drawing language as the booster icons: 24-box, currentColor, so it
@@ -244,7 +269,8 @@ export function createUI(h: UIHandlers): UI {
       <p class="tagline">Steer the falling ball. Smash everything. Dodge the mines.</p>
       <div class="account" id="title-account"></div>
       <button id="title-play">PLAY</button>
-      <button id="title-shop" class="title-board">${SHOP_ICON}<span>SHOP &amp; LEVEL</span></button>
+      <button id="title-store" class="title-board">${SHOP_ICON}<span>SKIN STORE</span></button>
+      <button id="title-shop" class="title-board">${LEVEL_ICON}<span>BOOSTERS &amp; LEVEL</span></button>
       <button id="title-board" class="title-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
       <div class="title-hint" id="title-hint"></div>
     </div>`;
@@ -315,6 +341,7 @@ export function createUI(h: UIHandlers): UI {
   biomeBanner.className = "biome-banner";
   document.body.appendChild(biomeBanner);
 
+
   const results = document.createElement("div");
   results.className = "results hidden";
   results.innerHTML = `
@@ -332,12 +359,11 @@ export function createUI(h: UIHandlers): UI {
         <button class="board-open" id="res-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
         <div class="bank-line">BANK <b class="bank" id="shop-bank">0</b></div>
         <div class="level-box" id="level-box"></div>
-        <div class="skin-row" id="skin-row"></div>
-        <div class="section" id="skins-section">
-          <div class="section-head">SKINS</div>
-          <div class="skin-grid" id="skin-grid"></div>
-        </div>
-        <div class="section daily hidden" id="gift-box"></div>
+        <button class="store-row" id="res-store">
+          <span class="store-row-ball" id="res-store-ball"></span>
+          <span class="store-row-text"><i>ball</i><b id="res-store-name">CORE</b></span>
+          <span class="store-row-go">STORE ${CHEVRON}</span>
+        </button>
         <div class="section" id="shop-section">
           <div class="section-head">BOOSTERS</div>
           <div class="shop-grid" id="shop-grid"></div>
@@ -408,6 +434,8 @@ export function createUI(h: UIHandlers): UI {
   });
   title.querySelector<HTMLButtonElement>("#title-board")!.addEventListener("click", openBoard);
   title.querySelector<HTMLButtonElement>("#title-shop")!.addEventListener("click", h.onShop);
+  // Bound late: the store is built further down, after el() exists.
+  title.querySelector<HTMLButtonElement>("#title-store")!.addEventListener("click", h.onStore);
 
   // The same card serves as the shop before a run, so the primary action is
   // whichever one makes sense: start the game, or drop again.
@@ -455,6 +483,210 @@ export function createUI(h: UIHandlers): UI {
   let lastCombo = 1;
   let model: ResultsModel | null = null;
 
+  // --- the store -------------------------------------------------------------
+  // Its own screen rather than a section of the pause card: twenty-four balls
+  // inline made a wall of ~100x80 cards whose only hit area was a 12px price
+  // line, so a tap landed about one time in five.
+  const storeView = document.createElement("div");
+  storeView.className = "store-overlay hidden";
+  storeView.innerHTML = `
+    <div class="store-card">
+      <div class="store-head">
+        <button id="store-back" aria-label="Back">${HOME_ICON}</button>
+        <span class="store-title">STORE</span>
+        <span class="store-worn"><span class="store-worn-ball" id="store-worn-ball"></span></span>
+      </div>
+      <div class="store-filters" id="store-filters"></div>
+      <div class="store-body">
+        <div class="store-grid" id="store-grid"></div>
+        <div class="gift-box hidden" id="gift-box"></div>
+      </div>
+    </div>
+    <div class="sheet hidden" id="skin-sheet">
+      <div class="sheet-card">
+        <div class="sheet-grab"></div>
+        <div class="sheet-ball" id="sheet-ball"></div>
+        <div class="sheet-name" id="sheet-name"></div>
+        <div class="sheet-sub" id="sheet-sub"></div>
+        <button class="sheet-main" id="sheet-main"></button>
+        <button class="sheet-gift" id="sheet-gift">${GIFT_ICON}<span id="sheet-gift-label"></span></button>
+        <p class="sheet-note" id="sheet-note"></p>
+      </div>
+    </div>`;
+  document.body.appendChild(storeView);
+
+  type Filter = "all" | "owned" | Rarity;
+  const FILTERS: { id: Filter; label: string }[] = [
+    { id: "all", label: "ALL" },
+    { id: "owned", label: "MINE" },
+    { id: "common", label: "COMMON" },
+    { id: "rare", label: "RARE" },
+    { id: "epic", label: "EPIC" },
+    { id: "legendary", label: "LEGEND" },
+  ];
+  let filter: Filter = "all";
+  let sheetSkin: SkinOffer | null = null;
+
+  const closeSheet = (): void => {
+    sheetSkin = null;
+    el("skin-sheet").classList.add("hidden");
+  };
+
+  function openSheet(o: SkinOffer): void {
+    sheetSkin = o;
+    const ball = el("sheet-ball");
+    ball.innerHTML = "";
+    ball.appendChild(skinSwatch(o.id, true));
+    el("sheet-name").textContent = o.name;
+    el("sheet-sub").textContent = o.rarity
+      ? `${o.rarity.toUpperCase()} · ${o.stars} ★`
+      : o.needsLevel
+        ? `UNLOCKS AT LEVEL ${o.needsLevel}`
+        : "FREE · EARNED BY LEVEL";
+
+    const worn = o.id === model?.skins.current();
+    const main = el("sheet-main") as HTMLButtonElement;
+    main.className = `sheet-main ${o.rarity ?? "free"}`;
+    main.textContent = worn ? "WORN" : o.owned ? "WEAR IT" : o.needsLevel ? `LEVEL ${o.needsLevel}` : `BUY · ${o.stars} ★`;
+    main.disabled = worn || (!o.owned && (o.needsLevel !== null || !model?.skins.buyable));
+
+    // Gifting one you already own is most of the point, so this stays offered
+    // for owned skins too. Free skins cannot be gifted: there is nothing to buy.
+    const gift = el("sheet-gift") as HTMLButtonElement;
+    const giftable = o.rarity !== null && model?.skins.buyable === true;
+    gift.classList.toggle("hidden", !giftable);
+    el("sheet-gift-label").textContent = `GIFT IT · ${o.stars} ★`;
+    gift.disabled = false;
+    // Telegram has no recipient picker for this, so the ordering is spelled out
+    // BEFORE any money moves — otherwise the buyer taps GIFT expecting to
+    // choose a friend and finds they have bought it for themselves.
+    // A dead BUY button with no reason given reads as a broken game.
+    el("sheet-note").textContent = giftable
+      ? "A gift is paid for first. Telegram then opens your chat list so you can send it — the link works once, for whoever opens it."
+      : o.needsLevel
+        ? `Reach level ${o.needsLevel} and this one is yours.`
+        : o.owned || model?.skins.buyable
+          ? ""
+          : "Skins are bought with Telegram Stars — open TILTFALL inside Telegram to buy one.";
+    el("skin-sheet").classList.remove("hidden");
+  }
+
+  function renderStore(): void {
+    if (!model) return;
+    const m = model;
+    const wb = el("store-worn-ball");
+    wb.innerHTML = "";
+    wb.appendChild(skinSwatch(m.skins.current()));
+
+    const fb = el("store-filters");
+    fb.innerHTML = "";
+    for (const f of FILTERS) {
+      const chip = document.createElement("button");
+      chip.className = `chip${f.id === filter ? " on" : ""}`;
+      chip.textContent = f.label;
+      chip.addEventListener("click", () => {
+        filter = f.id;
+        renderStore();
+      });
+      fb.appendChild(chip);
+    }
+
+    const grid = el("store-grid");
+    grid.innerHTML = "";
+    const shown = m.skins
+      .catalogue()
+      .filter((o) => (filter === "all" ? true : filter === "owned" ? o.owned : o.rarity === filter));
+    for (const o of shown) {
+      const worn = o.id === m.skins.current();
+      // The WHOLE card is the button. Anything else and the ball — the one
+      // thing a player aims at — is dead to the touch.
+      const card = document.createElement("button");
+      card.className = `sk ${o.rarity ?? "free"}${worn ? " sel" : ""}${o.needsLevel ? " locked" : ""}`;
+      card.appendChild(skinSwatch(o.id));
+      const name = document.createElement("span");
+      name.className = "sk-name";
+      name.textContent = o.name;
+      const tag = document.createElement("b");
+      tag.textContent = worn ? "WORN" : o.owned ? "WEAR" : o.needsLevel ? `LVL ${o.needsLevel}` : `${o.stars} ★`;
+      card.append(name, tag);
+      card.addEventListener("click", () => openSheet(o));
+      grid.appendChild(card);
+    }
+    if (!shown.length) {
+      grid.innerHTML = '<p class="store-empty">Nothing here yet.</p>';
+    }
+
+    // Gifts bought and not yet handed over. A share sheet dismissed by accident
+    // must not lose a 250-Star purchase, so the link stays here.
+    const gb = el("gift-box");
+    const unsent = m.gifts.unsent();
+    gb.classList.toggle("hidden", unsent.length === 0);
+    gb.innerHTML = unsent.length ? `<div class="section-head">GIFTS TO SEND</div>` : "";
+    for (const g of unsent) {
+      const row = document.createElement("button");
+      row.className = "gift-row";
+      row.innerHTML = `<span>${GIFT_ICON} ${g.name}</span><b>SEND</b>`;
+      row.addEventListener("click", () => m.gifts.share(g.code));
+      gb.appendChild(row);
+    }
+  }
+
+  // Reachable from the title, where no run has happened and there is no model
+  // yet, so the caller hands one in.
+  const openStore = (r?: ResultsModel): void => {
+    if (r) model = r;
+    storeView.classList.remove("hidden");
+    renderStore();
+  };
+  const closeStore = (): void => {
+    closeSheet();
+    storeView.classList.add("hidden");
+  };
+  storeView.querySelector<HTMLButtonElement>("#store-back")!.addEventListener("click", closeStore);
+  // The sheet's backdrop is the store behind it; tapping it closes the sheet
+  // only, which is what a bottom sheet is expected to do.
+  el("skin-sheet").addEventListener("click", (e) => {
+    if (e.target === el("skin-sheet")) closeSheet();
+  });
+
+  el("sheet-main").addEventListener("click", () => {
+    const o = sheetSkin;
+    if (!o || !model) return;
+    if (o.owned) {
+      model.skins.select(o.id);
+      closeSheet();
+      renderStore();
+      renderPanels();
+      return;
+    }
+    const btn = el("sheet-main") as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = "…";
+    void model.skins.buy(o.id).then((ok) => {
+      if (!ok) return openSheet(o); // put the price back and let them try again
+      closeSheet();
+      renderStore();
+      renderPanels();
+    });
+  });
+
+  el("sheet-gift").addEventListener("click", () => {
+    const o = sheetSkin;
+    if (!o || !model) return;
+    const btn = el("sheet-gift") as HTMLButtonElement;
+    btn.disabled = true;
+    void model.skins.gift(o.id).then((ok) => {
+      btn.disabled = false;
+      if (!ok) return;
+      // Silent success reads as a failure, and the share sheet may have been
+      // dismissed — so say where the gift went.
+      el("sheet-note").textContent = "Bought. Pick the friend in Telegram — or send it later from GIFTS TO SEND below the store.";
+      renderStore();
+      renderPanels();
+    });
+  });
+
+
   function renderPanels(): void {
     if (!model) return;
     const m = model;
@@ -491,87 +723,13 @@ export function createUI(h: UIHandlers): UI {
     // Skins.
     // Skin swatches paint the REAL procedural pattern (owner: the menu was
     // showing flat colors while the ball had a pattern).
-    const sr = el("skin-row");
-    sr.innerHTML = "";
-    let worn: HTMLElement | null = null;
-    for (const id of m.skins.unlocked()) {
-      const b = document.createElement("button");
-      b.className = `skin${id === m.skins.current() ? " sel" : ""}`;
-      b.title = SKINS[id]?.name ?? id;
-      b.appendChild(skinSwatch(id));
-      b.addEventListener("click", () => {
-        m.skins.select(id);
-        renderPanels();
-      });
-      sr.appendChild(b);
-      if (id === m.skins.current()) worn = b;
-    }
-    // A collection outgrows the row, so the row scrolls — and the one being
-    // worn has to be the one you are looking at when it opens. Set directly
-    // rather than with scrollIntoView, which does nothing while the card is
-    // still hidden, and which would drag the card itself up and down.
-    if (worn) sr.scrollLeft = worn.offsetLeft - (sr.clientWidth - worn.offsetWidth) / 2;
-
-    // Skins for sale.
-    const sg = el("skin-grid");
-    sg.innerHTML = "";
-    for (const o of m.skins.forSale()) {
-      const card = document.createElement("div");
-      card.className = `skin-card ${o.rarity}${o.id === m.skins.current() ? " sel" : ""}`;
-      card.appendChild(skinSwatch(o.id));
-      const cap = document.createElement("span");
-      cap.textContent = o.name;
-      // Owned means the button wears it; unowned means it buys it. Outside
-      // Telegram there is nobody to charge, so an unowned one is just shown.
-      const act = document.createElement("button");
-      act.className = "skin-act";
-      act.textContent = o.owned ? (o.id === m.skins.current() ? "WORN" : "WEAR") : `${o.stars} ★`;
-      act.disabled = !o.owned && !m.skins.buyable;
-      act.addEventListener("click", () => {
-        if (o.owned) {
-          m.skins.select(o.id);
-          renderPanels();
-          return;
-        }
-        act.disabled = true;
-        void m.skins.buy(o.id).then((ok) => {
-          if (ok) renderPanels();
-          else act.disabled = false;
-        });
-      });
-      card.append(cap, act);
-      // Gifting one you already own is most of the point, so the corner button
-      // is on every card rather than only on the ones you have not bought.
-      if (m.skins.buyable) {
-        const gift = document.createElement("button");
-        gift.className = "skin-gift";
-        gift.title = `Gift ${o.name} — ${o.stars} ★`;
-        gift.textContent = GIFT_GLYPH;
-        gift.addEventListener("click", () => {
-          gift.disabled = true;
-          void m.skins.gift(o.id).then(() => {
-            gift.disabled = false;
-            renderPanels();
-          });
-        });
-        card.appendChild(gift);
-      }
-      sg.appendChild(card);
-    }
-
-    // Gifts bought and not yet sent. Hidden entirely when there are none —
-    // which is almost always — rather than sitting there as an empty heading.
-    const gb = el("gift-box");
-    const unsent = m.gifts.unsent();
-    gb.classList.toggle("hidden", unsent.length === 0);
-    gb.innerHTML = unsent.length ? `<div class="section-head">GIFTS TO SEND</div>` : "";
-    for (const g of unsent) {
-      const row = document.createElement("button");
-      row.className = "gift-row";
-      row.innerHTML = `<span>${GIFT_GLYPH} ${g.name}</span><b>SEND</b>`;
-      row.addEventListener("click", () => m.gifts.share(g.code));
-      gb.appendChild(row);
-    }
+    // Skins live in their own screen now: twenty-four balls inside the pause
+    // card were a wall of tiny targets, and this row is the way in.
+    const wornBall = el("res-store-ball");
+    wornBall.innerHTML = "";
+    wornBall.appendChild(skinSwatch(m.skins.current()));
+    el("res-store-name").textContent = SKINS[m.skins.current()]?.name ?? "";
+    (el("res-store") as HTMLButtonElement).onclick = () => openStore();
 
     // Shop.
     const grid = el("shop-grid");
@@ -791,6 +949,9 @@ export function createUI(h: UIHandlers): UI {
       // Nothing paints between these two statements, so there is no flash.
       results.classList.remove("hidden");
       renderPanels();
+    },
+    showStore(r) {
+      openStore(r);
     },
     showTitle() {
       renderAccount();

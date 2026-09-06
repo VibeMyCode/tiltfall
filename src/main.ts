@@ -364,6 +364,7 @@ const ui = createUI({
     ui.showTitle();
   },
   onShop: () => ui.showMenu(resultsModel()),
+  onStore: () => ui.showStore(resultsModel()),
   onStart: () => {
     initAudio(); // browsers only allow audio after a gesture
     started = true;
@@ -489,9 +490,6 @@ const resultsModel = (): ResultsModel => ({
       },
     },
     skins: {
-      // Levelled-into first, then bought — the strip reads as a history of the
-      // account rather than of the catalogue.
-      unlocked: () => [...perksAt(level).skins, ...SHOP_SKINS.filter((id) => boughtSkins.has(id))],
       current: () => skin,
       select: (id) => {
         if (!ownsSkin(id)) return;
@@ -499,15 +497,30 @@ const resultsModel = (): ResultsModel => ({
         save("tf.skin", skin);
         renderer.setSkin(skin);
       },
-      // Cheapest first, which sorts by rarity for free.
-      forSale: () =>
-        SHOP_SKINS.map((id) => ({
+      // Every ball there is: the free ones levels hand out first, in the order
+      // they are reached, then the shop cheapest first — which sorts by rarity
+      // for free. A locked free skin is still listed, saying what it needs.
+      catalogue: () => {
+        const free = CONFIG.levelPerks
+          .filter((r) => r.skin)
+          .map((r) => ({
+            id: r.skin!,
+            name: SKINS[r.skin!]?.name ?? r.skin!,
+            rarity: null,
+            stars: 0,
+            owned: perksAt(level).skins.includes(r.skin!),
+            needsLevel: r.level > level ? r.level : null,
+          }));
+        const sold = SHOP_SKINS.map((id) => ({
           id,
           name: SKINS[id].name,
-          rarity: SKINS[id].rarity ?? "common",
+          rarity: SKINS[id].rarity ?? null,
           stars: skinStars(id) ?? 0,
           owned: boughtSkins.has(id),
-        })).sort((a, b) => a.stars - b.stars),
+          needsLevel: null,
+        })).sort((a, b) => a.stars - b.stars);
+        return [...free, ...sold];
+      },
       buyable: starsAvailable(),
       async gift(id) {
         const product = skinProduct(id);
