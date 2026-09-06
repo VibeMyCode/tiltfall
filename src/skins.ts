@@ -295,7 +295,11 @@ export const skinStars = (id: string): number | null => {
   return r ? RARITY_STARS[r] : null;
 };
 
-const base = import.meta.env.BASE_URL; // "." on itch (subpath), "/" on a domain root
+// "./" on itch (subpath), "/" on a domain root. Guarded: this module is also
+// bundled into the Netlify functions through products.ts, and there is no
+// import.meta.env in Node — the bare read crashed every function on import
+// and took the bot down with them.
+const base = import.meta.env?.BASE_URL ?? "/";
 
 export const skinImage = (id: string): string | null =>
   SKINS[id]?.image ? `${base}skins/${SKINS[id].image}.jpg` : null;

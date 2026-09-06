@@ -24,8 +24,42 @@ function relativeImports(dir: string): string[] {
   return bad;
 }
 
+// Every source file an API handler reaches through relative imports. The
+// functions are bundled for Node, so anything in this graph that only exists
+// in a Vite browser build (import.meta.env, window, document) crashes the
+// function on import — which is exactly how a one-line itch.io tweak in
+// skins.ts took the bot webhook and the payments down while the tests stayed green.
+function apiGraph(): string[] {
+  const root = join(__dirname, "..");
+  const seen = new Set<string>();
+  const walk = (file: string): void => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const src = readFileSync(join(root, file), "utf8");
+    for (const m of src.matchAll(/from\s+"(\.\.?\/[^"]+)"/g)) {
+      const target = join(file, "..", m[1].replace(/\.js$/, ".ts")).replace(/\\/g, "/");
+      walk(target);
+    }
+  };
+  for (const f of readdirSync(join(root, "api"))) if (f.endsWith(".ts")) walk(`api/${f}`);
+  return [...seen];
+}
+
 describe("shipped modules", () => {
   it("give every relative import an explicit extension", () => {
     expect(SHIPPED.flatMap(relativeImports)).toEqual([]);
+  });
+
+  it("keep browser-only globals out of everything the API reaches", () => {
+    const hits: string[] = [];
+    for (const file of apiGraph()) {
+      const src = readFileSync(join(__dirname, "..", file), "utf8");
+      // Comments may name them; code may not. import.meta.env behind ?. is
+      // the sanctioned form — it reads as undefined in Node instead of throwing.
+      const code = src.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      if (/import\.meta\.env(?!\?)/.test(code)) hits.push(`${file}: import.meta.env without ?.`);
+      if (/\b(window|document|localStorage)\./.test(code)) hits.push(`${file}: browser global`);
+    }
+    expect(hits).toEqual([]);
   });
 });
