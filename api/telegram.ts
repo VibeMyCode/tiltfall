@@ -8,7 +8,7 @@
 import { credit, revoke } from "./_store.js";
 import { PRODUCTS } from "../src/products.js";
 
-const WEB_APP = "https://tiltfall.vercel.app/";
+const WEB_APP = "https://tiltfall.netlify.app/";
 const MINI_APP = "https://t.me/tiltfall_bot/play";
 
 // Matches /start and /play, with or without the @botname suffix Telegram adds

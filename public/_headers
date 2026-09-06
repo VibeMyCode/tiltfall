@@ -1,0 +1,8 @@
+# Netlify headers (Vite copies this file into dist/).
+# Telegram opens the game in an iframe; nobody else may.
+/*
+  Content-Security-Policy: frame-ancestors https://web.telegram.org https://*.telegram.org
+
+# Hashed build assets never change under the same name.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

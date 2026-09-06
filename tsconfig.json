@@ -22,5 +22,5 @@
   },
   // api/ was NOT typechecked, which is how a bad import specifier reached
   // production and crashed the function on load. It is checked now.
-  "include": ["src", "api"]
+  "include": ["src", "api", "netlify"]
 }

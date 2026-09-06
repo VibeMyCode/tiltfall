@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://tiltfall.vercel.app/sitemap.xml
+Sitemap: https://tiltfall.netlify.app/sitemap.xml

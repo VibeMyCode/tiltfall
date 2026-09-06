@@ -1,0 +1,11 @@
+# Netlify: static site from dist/, the API as functions. The handlers live in
+# api/ (plain Request → Response); netlify/functions/ holds the one-line
+# adapters that route a path to them. Headers (CSP, immutable assets) are in
+# public/_headers, which Vite copies into dist/.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

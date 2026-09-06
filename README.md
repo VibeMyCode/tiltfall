@@ -50,14 +50,14 @@ cross-device sync, banned APIs, ESM import specifiers.
 | `src/ui.ts` | every screen — HUD, results, menu, store, leaderboard, sheets |
 | `src/main.ts` | wiring, persistence, the run loop |
 | `src/replay.ts` | records inputs, re-runs them to a score |
-| `api/` | Vercel functions: leaderboard, Stars, the bot webhook |
+| `api/` | the API: leaderboard, Stars, the bot webhook (Netlify functions via `netlify/functions/`) |
 
 `api/_store.ts` is the ledger — Upstash Redis, wallets and entitlements.
 `api/_initdata.ts` is the only place a Telegram identity is verified. Both are
-underscore-prefixed so Vercel does not serve them as endpoints.
+underscore-prefixed by convention: only the three files with a Netlify adapter
+are reachable as endpoints.
 
-Environment (set in Vercel, not in the repo): `TELEGRAM_BOT_TOKEN`,
-`TELEGRAM_WEBHOOK_SECRET`. Redis comes from the Upstash integration's own vars.
+Environment: see *Deploying*.
 
 ## Fairness
 
@@ -81,11 +81,12 @@ The leaderboard is the reason several things are shaped the way they are.
 
 Durable, non-obvious, and cheaper to read than to rediscover.
 
-- **`api/` imports need explicit `.js`.** Vercel transpiles those files one by
-  one; Node will not guess extensions for relative imports. `vercel dev`
-  resolves them either way, which is exactly how a crash reached production.
-  `tests/imports.test.ts` guards it. `api/` is in the tsconfig `include` now —
-  it was not, which is why nothing caught it.
+- **`api/` imports need explicit `.js`.** Vercel used to transpile those files
+  one by one, and Node will not guess extensions for relative imports; the dev
+  server resolved them either way, which is exactly how a crash reached
+  production. Netlify bundles with esbuild and would forgive it, but
+  `tests/imports.test.ts` keeps the rule so the code stays runnable under any
+  per-file transpiler. `api/` and `netlify/` are in the tsconfig `include`.
 - **Babylon's sphere runs V bottom-up.** The BOTTOM edge of a texture is the
   pole facing the camera. Get it backwards and the design lands on the far
   side of the ball.
@@ -144,6 +145,14 @@ was shorter than describing it.
 
 ## Deploying
 
-Pushing to `master` deploys. `vercel.json` sets the Telegram `frame-ancestors`
-CSP and immutable caching for hashed assets. After changing an environment
-variable, redeploy — functions read them at boot.
+Netlify, from `master`: every push builds `dist` and publishes it, so a merge
+is a deploy. `netlify.toml` names the build and the functions directory;
+`public/_headers` carries the Telegram `frame-ancestors` CSP and the immutable
+cache for hashed assets. The API handlers stay in `api/` as plain
+Request → Response functions; `netlify/functions/*.mts` are the adapters that
+give each one its path. Environment (set in Netlify, not in the repo):
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `UPSTASH_REDIS_REST_URL`,
+`UPSTASH_REDIS_REST_TOKEN`. After changing one, redeploy — functions read
+them at boot. The bot's webhook must point at `/api/telegram` on the live
+domain with the same secret (`setWebhook`), and BotFather's Mini App URL at
+the site root.

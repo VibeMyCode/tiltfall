@@ -2,7 +2,7 @@
 
 > Status: not published. Needs an X account (owner). Suggested cadence:
 > 1 thread/week. #screenshotsaturday works for reach; keep hashtags ≤ 3.
-> Media to attach: press/telegram-1280x720.png, press/logo.webp, og.png.
+> Media to attach: press/telegram-1280x720.png, press/logo.webp, public/og.jpg.
 > Short gameplay clips (10–20 s) outperform images once the clip pipeline
 > exists.
 
@@ -29,7 +29,7 @@ shards. Five biomes crossfade the deeper you fall. Runs on phones — portrait
 or landscape — no install, ~free.
 
 **Post 5 (CTA):**
-Play the browser build: tiltfall.vercel.app
+Play the browser build: tiltfall.netlify.app
 Or in Telegram (leaderboard + skins): t.me/tiltfall_bot/play
 Free. Tell me your depth record. 🏔️ #screenshotsaturday #webgame
 
