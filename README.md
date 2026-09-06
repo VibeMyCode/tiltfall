@@ -102,8 +102,8 @@ Durable, non-obvious, and cheaper to read than to rediscover.
   `@babylonjs/core/Cameras/arcRotateCamera`; `Scene` is at the package root.
   Read `node_modules/@babylonjs/core` to confirm an import path exists — never
   to derive behaviour. Sign conventions get settled by running the game.
-- **A Vercel 403 may be about your IP, not the project.** A flagged VPN exit
-  node gets challenged, `api.vercel.com` included. curl from it proves nothing.
+- **A hosting 403 may be about your IP, not the project.** A flagged VPN exit
+  node gets challenged by the CDN edge. curl from it proves nothing.
 
 ## Performance
 

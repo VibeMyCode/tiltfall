@@ -2,7 +2,7 @@
 // Node's ESM loader does not guess extensions. An extensionless relative import
 // anywhere in the graph the function reaches therefore crashes it on import —
 // which is exactly how the leaderboard shipped returning 500 to every request
-// while every local test stayed green, because vercel dev resolves through a
+// while every local test stayed green, because the local dev server resolves through a
 // bundler and hides it.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";

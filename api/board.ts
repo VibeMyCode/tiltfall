@@ -8,8 +8,8 @@
 //    refused until a proof arrives, and one at or below it is clamped to that
 //    best - so the lifetime total can only grow as fast as you have actually
 //    proven you can play.
-// Explicit .js: Vercel compiles this to ESM and Node does not guess extensions
-// for relative imports. vercel dev resolves it either way, which is how the
+// Explicit .js: the platform compiles this to ESM and Node does not guess extensions
+// for relative imports. The local dev server resolves it either way, which is how the
 // deployed function came to crash on import while local testing stayed green.
 import { verifyInitData } from "./_initdata.js";
 import { db, entitlements, rateLimit, spendRevives } from "./_store.js";

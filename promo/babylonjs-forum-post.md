@@ -22,6 +22,6 @@ For anyone curious about the engine side:
 It ships as a Telegram Mini App, so the browser build is deliberately lean and mobile-first — the same game minus payments and the leaderboard.
 
 Play it: https://t.me/tiltfall_bot/play (Telegram Mini App)
-Browser build: https://tiltfall.vercel.app
+Browser build: https://tiltfall.netlify.app
 
 Screenshots below. I'd genuinely love FPS reports from real devices on deep tower levels (the mesh count climbs as you fall) — and any feedback or bug reports. Devlog and weekly challenges live at @tiltfall_news.
