@@ -1,37 +1,27 @@
-# Babylon.js forum — "Show your work" post (DRAFT)
+# Babylon.js forum — "Show your work" post (FINAL)
 
-> Status: not published. To publish: register on forum.babylonjs.com, open
-> "Show your work" board, post under your account. Community norm = devlogs
-> are welcome there; this is a dev post, not an ad.
+> Status: ready to publish by owner on forum.babylonjs.com (Show your work).
+> Owner attaches 2–4 screenshots after the text.
 
 ---
 
-**Title: TILTFALL — an endless falling-ball arcade built on Babylon.js (playable in-browser)**
+**Title: TILTFALL — an endless falling-ball arcade built with Babylon.js (playable now, in browser & Telegram)**
 
-I built a small arcade game on Babylon.js 9 and it's finally in a state I'm
-happy to share. Every run is a freshly generated endless crystal tower; you
-steer a glowing ball down it, punch through glass panes, smash stone blocks,
-chain bombs, bounce off bumpers — and one touch of a mine ends the run.
+I've been building a small arcade game on Babylon.js and it finally reached a state I'm happy to share publicly.
 
-**Why it might interest you (the engine bits):**
-- Pure-TypeScript fixed-timestep simulation at 1/120 s with **no physics
-  engine** — sphere-vs-AABB collisions with min-penetration axis resolution,
-  contact order fixed by wall/block ids, impulse-based piece breaking.
-- **Determinism by construction**: seeded RNG streams only (no
-  `Math.random`/`Date` inside sim modules). Same seed + same input log ⇒ same
-  run — the replay protocol is used in the test suite.
-- **Procedural level generation**: tiers are streamed from the run seed ahead
-  of the fall; multi-cell pieces (L, П, 2×2) share group ids and break as a
-  whole with one score event.
-- **Textureless presentation**: flat-shaded materials, GlowLayer + bloom +
-  FXAA, depth fog that scales with camera zoom, impact-directed shards.
-  Kept it all shader/effect work on the engine side, zero external art.
-- Five depth biomes crossfade sky, fog, walls and block tints as you fall.
+The pitch: a glowing ball plummets down an endlessly generated crystal tower. You steer it in the air, smash through glass panes, punch stone blocks apart, detonate bombs into chain reactions, bounce off launchers — and survive the mines that end the run in one touch. Every run is a freshly generated tower, score banks between runs, and a handful of biomes crossfade as you fall deeper.
 
-**Play it:** https://tiltfall.vercel.app (plain web, no install)
-**Or in Telegram:** https://t.me/tiltfall_bot/play (same game, plus leaderboard)
+For anyone curious about the engine side:
 
-It ships as a Telegram Mini App, so the browser build is deliberately
-dependency-light and runs on phones — I'd love FPS reports from real
-hardware, especially on the deep tower levels where the mesh count climbs.
-Feedback, bug reports and "it lags on my phone" messages are all welcome!
+- **Pure-TypeScript fixed-timestep simulation at 1/120 s, no physics engine.** Sphere-vs-AABB with min-penetration-axis resolution, fixed contact order (walls, then blocks by id), impulse-based piece breaking. Multi-cell pieces (L, П, 2×2) share a group id, break as a whole and score once.
+- **Determinism by construction.** Seeded RNG streams only — no `Math.random`, no `Date` inside the sim modules. Same seed + same input log ⇒ same run; the test suite replays runs and compares checksums.
+- **Procedural endless tower.** Tiers stream from the run seed ahead of the fall; the walls follow the ball. No floor, no loading seams.
+- **Textureless-first presentation.** Flat-shaded materials, GlowLayer + bloom + FXAA, depth fog scaled with camera zoom, impact-directed shards, short hit-stop on kills. No camera shake — the camera never fights the steering.
+- **Runs on phones** (portrait and landscape), tablets and desktops, no install.
+
+It ships as a Telegram Mini App, so the browser build is deliberately lean and mobile-first — the same game minus payments and the leaderboard.
+
+Play it: https://t.me/tiltfall_bot/play (Telegram Mini App)
+Browser build: https://tiltfall.vercel.app
+
+Screenshots below. I'd genuinely love FPS reports from real devices on deep tower levels (the mesh count climbs as you fall) — and any feedback or bug reports. Devlog and weekly challenges live at @tiltfall_news.
