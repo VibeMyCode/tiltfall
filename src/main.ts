@@ -765,6 +765,17 @@ renderer.scene.onBeforeRenderObservable.add(() => {
   get jumpCd() {
     return sim.jumpCd;
   },
+  // For the perf harness: engine counters live here, and a deep run is one
+  // teleport away instead of ten minutes of play.
+  get renderer() {
+    return renderer;
+  },
+  get seed() {
+    return sim.seed;
+  },
+  warp(tiers: number) {
+    sim.ball.y += tiers * CONFIG.tierSpacing;
+  },
   grant(id: BoosterId, n = 1) {
     inventory[id] = (inventory[id] ?? 0) + n;
   },

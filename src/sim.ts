@@ -38,6 +38,12 @@ export interface SimState {
   ball: { x: number; y: number; z: number; vx: number; vy: number; vz: number };
   blocks: SimBlock[];
   tiersBuilt: number;
+  // Index into `blocks` where each tier starts. Tiers are pushed whole and
+  // never removed, so a tier is one contiguous run — which is what lets the
+  // per-tick scans below look at the two tiers around the ball instead of the
+  // whole tower. At depth 80 that is ~100 blocks instead of ~5000, 120 times a
+  // second, and the aim thread runs the same scan up to 900 times a frame.
+  tierStart: number[];
   groupDamage: Record<number, number>;
   // `from` is the blast that queued this one, kept so the renderer can draw the
   // lightning that visibly triggers it. Only CHAIN sets it — a quake is a
@@ -73,6 +79,7 @@ export function createSim(seed: number, opts?: SimOpts): SimState {
     ball: { x: CONFIG.spawn.x, y: CONFIG.spawn.y, z: CONFIG.spawn.z, vx: 0, vy: 0, vz: 0 },
     blocks: [],
     tiersBuilt: 0,
+    tierStart: [],
     groupDamage: {},
     queue: [],
     combo: 1,
@@ -107,9 +114,32 @@ function ensureTiers(s: SimState): void {
   const need =
     Math.max(0, Math.floor((s.ball.y + C.tierAttributionBias - C.firstTierTopY) / C.tierSpacing)) + C.tierLookahead;
   while (s.tiersBuilt <= need) {
+    s.tierStart.push(s.blocks.length);
     for (const b of buildTier(s.seed, s.tiersBuilt)) s.blocks.push({ ...b, broken: false });
     s.tiersBuilt++;
   }
+}
+
+// The slice of `blocks` that can touch a ball at height y: every tier whose
+// rest level lies within ±margin. A block sits at most 32 above its tier's
+// rest level, reaches at most 30 down from its centre and the ball adds 40, so
+// anything outside ±102 fails the overlap test anyway; 200 keeps a margin.
+// Blocks inside the slice are visited in exactly the order the full scan
+// visited them, so the outcome is bit-identical (§5.4).
+const SCAN_MARGIN = 200;
+function tierRange(s: SimState, y: number): [number, number] {
+  const C = CONFIG;
+  const n = s.tiersBuilt;
+  // A hand-placed block list (the punch tests swap one in) has no tier
+  // layout to index; it is small, so the whole of it is scanned as before.
+  if (s.tierStart.length !== n || (n > 0 && s.tierStart[n - 1] >= s.blocks.length)) return [0, s.blocks.length];
+  const base = C.firstTierTopY + C.blockH;
+  let lo = Math.ceil((y - SCAN_MARGIN - base) / C.tierSpacing);
+  let hi = Math.floor((y + SCAN_MARGIN - base) / C.tierSpacing);
+  if (lo < 0) lo = 0;
+  if (hi > s.tiersBuilt - 1) hi = s.tiersBuilt - 1;
+  if (lo > hi) return [0, 0];
+  return [s.tierStart[lo], hi + 1 < s.tiersBuilt ? s.tierStart[hi + 1] : s.blocks.length];
 }
 
 export function activateBooster(s: SimState, id: BoosterId): void {
@@ -255,7 +285,9 @@ function processQueue(s: SimState, events: SimEvent[]): void {
 function resolveBlocks(s: SimState, events: SimEvent[]): void {
   const { ball } = s;
   const r = CONFIG.ballRadius;
-  for (const b of s.blocks) {
+  const [lo, hi] = tierRange(s, ball.y);
+  for (let i = lo; i < hi; i++) {
+    const b = s.blocks[i];
     if (b.broken) continue;
     const hx = b.hx + r;
     const hy = b.hy + r;
@@ -458,6 +490,8 @@ export function predictPath(
   let landed = false;
   let { x, y, z, vx, vy, vz } = s.ball;
   outer: for (let i = 0; i < 900; i++) {
+    // `outer` is what the landing test below breaks out of; the wall cuts
+    // are at loop level and use a plain break.
     vx += C.g0 * C.kTilt * kTiltMul * tiltX * C.dt;
     vy += C.g0 * C.dt;
     vz += C.g0 * C.kTilt * kTiltMul * tiltZ * C.dt;
@@ -474,24 +508,50 @@ export function predictPath(
     x += vx * C.dt;
     y += vy * C.dt;
     z += vz * C.dt;
-    const wallChecks: [boolean, () => void][] = [
-      [x < C.ballRadius && vx < 0, () => ((x = C.ballRadius), (vx = -vx * C.wallRestitution))],
-      [x > C.shaftW - C.ballRadius && vx > 0, () => ((x = C.shaftW - C.ballRadius), (vx = -vx * C.wallRestitution))],
-      [z < C.ballRadius && vz < 0, () => ((z = C.ballRadius), (vz = -vz * C.wallRestitution))],
-      [z > C.shaftD - C.ballRadius && vz > 0, () => ((z = C.shaftD - C.ballRadius), (vz = -vz * C.wallRestitution))],
-    ];
-    for (const [hit, resolve] of wallChecks) {
-      if (!hit) continue;
-      const lateral = Math.max(Math.abs(vx), Math.abs(vz));
-      if (lateral > WALL_CUT_SPEED) {
+    // Four wall checks in fixed order. Written out flat: this runs up to 900
+    // times a frame, and an array of closures per step was most of its cost.
+    // A resolved bounce feeds into the lateral speed the next check sees,
+    // exactly as before.
+    if (x < C.ballRadius && vx < 0) {
+      if (Math.max(Math.abs(vx), Math.abs(vz)) > WALL_CUT_SPEED) {
         pts.push({ x, y, z });
         wallHit = true;
-        break outer;
+        break;
       }
-      resolve();
+      x = C.ballRadius;
+      vx = -vx * C.wallRestitution;
+    }
+    if (x > C.shaftW - C.ballRadius && vx > 0) {
+      if (Math.max(Math.abs(vx), Math.abs(vz)) > WALL_CUT_SPEED) {
+        pts.push({ x, y, z });
+        wallHit = true;
+        break;
+      }
+      x = C.shaftW - C.ballRadius;
+      vx = -vx * C.wallRestitution;
+    }
+    if (z < C.ballRadius && vz < 0) {
+      if (Math.max(Math.abs(vx), Math.abs(vz)) > WALL_CUT_SPEED) {
+        pts.push({ x, y, z });
+        wallHit = true;
+        break;
+      }
+      z = C.ballRadius;
+      vz = -vz * C.wallRestitution;
+    }
+    if (z > C.shaftD - C.ballRadius && vz > 0) {
+      if (Math.max(Math.abs(vx), Math.abs(vz)) > WALL_CUT_SPEED) {
+        pts.push({ x, y, z });
+        wallHit = true;
+        break;
+      }
+      z = C.shaftD - C.ballRadius;
+      vz = -vz * C.wallRestitution;
     }
     if (i % 5 === 0) pts.push({ x, y, z });
-    for (const blk of s.blocks) {
+    const [lo, hi] = tierRange(s, y);
+    for (let k = lo; k < hi; k++) {
+      const blk = s.blocks[k];
       if (blk.broken) continue;
       const top = blk.cy - blk.hy;
       if (y + C.ballRadius < top) continue;

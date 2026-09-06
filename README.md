@@ -37,8 +37,8 @@ or buy one as a gift for a friend.
 hand out, in their own store screen. Four are drawn in code, not painted: the
 eyes.
 
-Tests: 72 across 15 files — determinism, replay verification, initData
-signatures, the product catalogue, the skin table, palettes, level furniture,
+Tests: 76 across 16 files — determinism, pinned golden runs, replay
+verification, initData signatures, the product catalogue, the skin table, palettes, level furniture,
 cross-device sync, banned APIs, ESM import specifiers.
 
 ## How it is put together
@@ -103,6 +103,29 @@ Durable, non-obvious, and cheaper to read than to rediscover.
   to derive behaviour. Sign conventions get settled by running the game.
 - **A Vercel 403 may be about your IP, not the project.** A flagged VPN exit
   node gets challenged, `api.vercel.com` included. curl from it proves nothing.
+
+## Performance
+
+Built for mid-range phones; `src/render.ts` explains each rule in place.
+Everything opaque that repeats (block bodies, spike cones, mines, debris) is
+a hardware instance of one template, so a tier costs a handful of draw calls
+rather than one per block. Debris, rings, lightning and the comet tail are
+pooled and reused, never built mid-run. Tiers two spacings above the ball are
+disposed — a deep run used to carry six thousand meshes behind it. The sim
+scans only the tiers around the ball (`tierStart`), bit-identical to the full
+scan, and `tests/golden.test.ts` pins three runs and their aim paths so a
+scan that visits one block out of order cannot pass.
+
+Numbers are measured, not guessed: `scripts/perf-harness.mjs` drives the
+built game under a virtual clock with a seeded random, reports CPU per frame,
+draw calls and active meshes, and screenshots fixed frames;
+`scripts/pixdiff.mjs` compares two runs pixel for pixel. Same seed, depth 80,
+M3 Max: 7.4-13 ms → 1.0-2.2 ms CPU per frame, 540-930 → 140-210 draw calls.
+Frames with no debris in flight are pixel-identical to the pre-instancing
+build; the one known deviation is the blend order of translucent glass shards
+overlapping each other, since a batch draws in pool order rather than by
+depth. Glass blocks and the face marks are deliberately NOT instanced for
+that reason: they are alpha-blended and sort per mesh.
 
 ## Assets
 

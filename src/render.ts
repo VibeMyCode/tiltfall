@@ -1,11 +1,27 @@
 // Babylon renderer — mirrors SimState, owns all juice (shards, shockwaves,
 // shake, hit-stop, glow). The sim never reads anything from here.
+//
+// Built for phones. Three rules keep the frame cheap and none of them changes
+// a pixel:
+//  - Anything opaque that repeats (block bodies, spike cones, mines, shards)
+//    is a hardware INSTANCE of one template mesh: one draw call per template,
+//    not one per block. Glass blocks and the face marks stay individual meshes
+//    because they are alpha-blended and Babylon sorts those per mesh — a batch
+//    would draw them in one order and the see-through tint would shift.
+//  - Effects (shards, rings, lightning, the comet tail) are POOLED and
+//    reused, never created and disposed mid-run. Building a mesh is a GPU
+//    buffer upload; a chain reaction used to build hundreds in half a second.
+//  - Tiers the camera has fallen past are DISPOSED. The scene walks every mesh
+//    twice a frame (main pass and glow pass), and a deep run used to carry the
+//    whole tower behind it: six thousand meshes at depth 80.
 import "@babylonjs/core/Culling/ray"; // side-effect: enables scene.createPickingRay
+import "@babylonjs/core/Meshes/instancedMesh"; // side-effect: enables mesh.createInstance
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
@@ -14,6 +30,7 @@ import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
@@ -26,7 +43,8 @@ import { SKINS, drawSkin, skinImage } from "./skins.js";
 import { FIXED_BLOCK_RGB, paletteAt } from "./biomes.js";
 
 interface Shard {
-  mesh: Mesh;
+  mesh: AbstractMesh;
+  tpl: Mesh; // the pool it goes back to
   vx: number;
   vy: number;
   vz: number;
@@ -39,6 +57,8 @@ interface Shard {
 interface Ring {
   mesh: Mesh;
   mat: StandardMaterial;
+  tess: number;
+  radius: number;
   life: number;
 }
 
@@ -79,11 +99,25 @@ const EMIT_STONE = 0.05;
 const HEMI_BASE = 0.45;
 const SUN_BASE = 1.0;
 
+// A tier this far above the ball is above the camera for any screen shape,
+// and the highest the ball can be thrown back up (a bumper at top speed) is
+// under half of it. Its meshes can go.
+const DROP_TIERS_ABOVE = 2;
+
 export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): Renderer {
   const C = CONFIG;
-  const engine = new Engine(canvas, true);
+  // No MSAA on the backbuffer: the scene renders into the post-process
+  // chain and FXAA is the anti-aliasing. Multisampling the final full-screen
+  // quad resolved to the same pixels and cost bandwidth every frame.
+  const engine = new Engine(canvas, false);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.05, 0.06, 0.1, 1);
+  // Nothing here is picked with the pointer; steering is a ray against a
+  // plane in screenToShaft. Without these the scene ray-casts every pickable
+  // mesh on every pointer move — a finger drag is a hundred moves a second.
+  scene.skipPointerMovePicking = true;
+  scene.skipPointerDownPicking = true;
+  scene.skipPointerUpPicking = true;
 
   // A hemispheric light hits every face of a cube almost equally, so when it
   // outweighs the sun the tower flattens into silhouettes and the only way to
@@ -129,6 +163,21 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     return m;
   }
 
+  // A template is the one mesh its instances share geometry and material
+  // with. Invisible itself, enabled so Babylon still walks it; the instances
+  // are what get drawn. Parented to the tower and parked at the ball each
+  // frame, so a translucent template's batch sorts among the other
+  // transparent meshes where its shards actually are.
+  const templates: Mesh[] = [];
+  function template(m: Mesh, mat: StandardMaterial): Mesh {
+    m.material = mat;
+    m.isVisible = false;
+    m.isPickable = false;
+    m.parent = tower;
+    templates.push(m);
+    return m;
+  }
+
   // Endless tower: no floor. Walls are long boxes repositioned to follow the
   // ball so the shaft never visually ends.
   const wallH = 30000;
@@ -168,6 +217,28 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     makeMaterial("mDeath2", [0.6, 0.9, 1], 0.9),
     makeMaterial("mDeath3", [1, 1, 1], 0.8),
   ];
+
+  // Opaque block bodies: a unit cube per material, scaled per instance.
+  const unitBox = (name: string, mat: StandardMaterial) =>
+    template(MeshBuilder.CreateBox(name, { size: 1 }, scene), mat);
+  const BODY: Partial<Record<BlockType, Mesh>> = {
+    stone: unitBox("tplStone", MATS.stone),
+    bomb: unitBox("tplBomb", MATS.bomb),
+    bumper: unitBox("tplBumper", MATS.bumper),
+    spike: unitBox("tplSpike", MATS.spike),
+  };
+  const coneTemplate = template(
+    MeshBuilder.CreateCylinder("tplCone", { diameterTop: 0, diameterBottom: 34, height: 52, tessellation: 8 }, scene),
+    MATS.spike,
+  );
+  // Debris: a unit shape per material, scaled to the shard's size.
+  const SHARD_BOX: Partial<Record<BlockType, Mesh>> = {
+    stone: unitBox("tplShStone", MATS.stone),
+    bomb: unitBox("tplShBomb", MATS.bomb),
+    mine: unitBox("tplShMine", MATS.mine),
+  };
+  const shardDisc = template(MeshBuilder.CreateDisc("tplShGlass", { radius: 1, tessellation: 3 }, scene), glassShardMat);
+  const deathBox = deathMats.map((m, i) => unitBox(`tplDeath${i}`, m));
 
   // Top-face marks. A bomb is the thing worth aiming at and a bumper is a
   // launcher, but both read as "a coloured block" until something on the face
@@ -236,9 +307,9 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     }),
   };
 
-  // A MINE is built once and cloned. Spiky is fifteen meshes a mine if built
-  // naively, and there are dozens on screen deep down; merged, a mine costs the
-  // one draw the plain sphere used to.
+  // A MINE is built once and instanced. Spiky is fifteen meshes a mine if
+  // built naively, and there are dozens on screen deep down; merged and
+  // instanced, every mine on screen is one draw.
   // Reach stays 30 as before, so a mine is still caught where it always was —
   // the sphere shrinks and the spikes take up the difference.
   const mineTemplate = (() => {
@@ -277,34 +348,41 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       parts.push(spike);
     }
     const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, false)!;
-    merged.setEnabled(false); // template only
-    merged.isPickable = false;
-    return merged;
+    return template(merged, MATS.mine);
   })();
 
   const blockInfo = new Map<number, BlockDef>();
-  const blockMeshes = new Map<number, Mesh>();
+  // Every mesh a block owns: its body plus the mark or the cones on it. Marks
+  // and cones hang off the tower, not the body — a body is a scaled instance
+  // and a child would inherit the scale.
+  const blockMeshes = new Map<number, AbstractMesh[]>();
+  const tierIds = new Map<number, number[]>(); // block ids per tier, for disposal
+  const tierOf = (id: number) => Math.floor(id / 1000); // levelgen: id = tier * 1000 + n
+  let lowestLiveTier = 0;
+  let synced = 0; // how much of the sim's block list has meshes
 
   function addBlockMesh(b: BlockDef): void {
     blockInfo.set(b.id, b);
-    let mesh: Mesh;
+    const parts: AbstractMesh[] = [];
+    let body: AbstractMesh;
     if (b.type === "mine") {
       // A MINE must read as lethal: a spiked ball, not a berry.
-      mesh = mineTemplate.clone(`b${b.id}`);
-      mesh.setEnabled(true);
-      mesh.material = MATS.mine;
-      mesh.position = toLocal(b.cx, b.cy, b.cz);
-    } else {
-      mesh = MeshBuilder.CreateBox(
+      body = mineTemplate.createInstance(`b${b.id}`);
+    } else if (b.type === "glass") {
+      // Translucent, so it stays its own mesh and sorts by its own distance.
+      body = MeshBuilder.CreateBox(
         `b${b.id}`,
         { width: b.hx * 2 - 6, height: b.hy * 2 - 4, depth: b.hz * 2 - 6 },
         scene,
       );
-      mesh.material = MATS[b.type];
-      mesh.position = toLocal(b.cx, b.cy, b.cz);
+      body.material = MATS.glass;
+    } else {
+      body = BODY[b.type]!.createInstance(`b${b.id}`);
+      body.scaling.set(b.hx * 2 - 6, b.hy * 2 - 4, b.hz * 2 - 6);
     }
-    mesh.parent = tower;
-    blockMeshes.set(b.id, mesh);
+    body.position = toLocal(b.cx, b.cy, b.cz);
+    body.parent = tower;
+    parts.push(body);
     const mark = MARK_MATS[b.type];
     if (mark) {
       // Fixed size, so it stays an icon on a wide block instead of stretching
@@ -312,10 +390,11 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       const size = Math.min(Math.min(b.hx, b.hz) * 1.5, 96);
       const face = MeshBuilder.CreatePlane(`mk${b.id}`, { size }, scene);
       face.material = mark;
-      face.parent = mesh;
+      face.parent = tower;
       face.rotation.x = -Math.PI / 2; // lie flat on the top face
-      face.position = new Vector3(0, b.hy - 1, 0);
+      face.position = toLocal(b.cx, b.cy - (b.hy - 1), b.cz);
       face.isPickable = false;
+      parts.push(face);
     }
     if (b.type === "spike") {
       for (const [ox, oz] of [
@@ -324,18 +403,28 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
         [22, -22],
         [22, 22],
       ]) {
-        const cone = MeshBuilder.CreateCylinder(
-          `sp${b.id}`,
-          { diameterTop: 0, diameterBottom: 34, height: 52, tessellation: 8 },
-          scene,
-        );
-        cone.material = MATS.spike;
-        cone.parent = mesh;
-        cone.position = new Vector3(ox, b.hy + 26, oz);
+        const cone = coneTemplate.createInstance(`sp${b.id}`);
+        cone.parent = tower;
+        cone.position = toLocal(b.cx + ox, b.cy - (b.hy + 26), b.cz + oz);
+        parts.push(cone);
       }
     }
+    blockMeshes.set(b.id, parts);
+    const t = tierOf(b.id);
+    const ids = tierIds.get(t);
+    if (ids) ids.push(b.id);
+    else tierIds.set(t, [b.id]);
+  }
+  function disposeTier(t: number): void {
+    for (const id of tierIds.get(t) ?? []) {
+      for (const m of blockMeshes.get(id) ?? []) m.dispose();
+      blockMeshes.delete(id);
+      blockInfo.delete(id);
+    }
+    tierIds.delete(t);
   }
   for (const b of layout) addBlockMesh(b);
+  synced = layout.length;
 
   let skinBase = SKINS.core;
   const ballMat = makeMaterial("mBall", skinBase.rgb, skinBase.emissive);
@@ -398,10 +487,63 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   let trailRibbon: Mesh | null = null;
   let trailMat: StandardMaterial | null = null;
   const trailHistory: Vector3[] = [];
+  // Fixed-capacity buffers, updated in place. The ribbon used to be rebuilt as
+  // a new mesh every frame the tail was on.
+  const trailPos = new Float32Array(TRAIL_SEGMENTS * 2 * 3);
+  const trailCol = new Float32Array(TRAIL_SEGMENTS * 2 * 4);
   // SHIELD aura: an ethereal breathing sphere around the ball while shields
   // are up (owner).
   let shieldOn = false;
   let shieldPhase = 0;
+
+  // Shard pool: spent instances go back to their template's free list.
+  const shardFree = new Map<Mesh, AbstractMesh[]>();
+  function takeShard(tpl: Mesh): AbstractMesh {
+    const free = shardFree.get(tpl);
+    const m = free?.pop();
+    if (m) {
+      m.setEnabled(true);
+      m.rotation.set(0, 0, 0);
+      return m;
+    }
+    const inst = tpl.createInstance("sh");
+    inst.parent = tower;
+    inst.isPickable = false;
+    return inst;
+  }
+  function dropShard(s: Shard): void {
+    s.mesh.setEnabled(false);
+    const free = shardFree.get(s.tpl);
+    if (free) free.push(s.mesh);
+    else shardFree.set(s.tpl, [s.mesh]);
+  }
+
+  // Ring pool. Each ring fades on its own, so it keeps its own material; the
+  // disc is unit-sized and scaled to the radius asked for.
+  const ringFree: Ring[] = [];
+  function takeRing(radius: number, tess: number, rgb: [number, number, number], alpha: number, life: number): Ring {
+    const i = ringFree.findIndex((r) => r.tess === tess);
+    let r: Ring;
+    if (i >= 0) {
+      r = ringFree.splice(i, 1)[0];
+      r.mesh.setEnabled(true);
+    } else {
+      const mesh = MeshBuilder.CreateDisc("ring", { radius: 1, tessellation: tess }, scene);
+      const mat = makeMaterial("mRing", rgb, 1);
+      mesh.material = mat;
+      mesh.rotation.x = Math.PI / 2;
+      mesh.parent = tower;
+      mesh.isPickable = false;
+      r = { mesh, mat, tess, radius, life };
+    }
+    r.mat.diffuseColor.set(rgb[0], rgb[1], rgb[2]);
+    r.mat.emissiveColor.set(rgb[0], rgb[1], rgb[2]);
+    r.mat.alpha = alpha;
+    r.radius = radius;
+    r.life = life;
+    rings.push(r);
+    return r;
+  }
 
   function spawnShards(b: BlockDef, e: SimEvent): void {
     const base = toLocal(b.cx, b.cy, b.cz);
@@ -415,29 +557,32 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     const n = Math.round((heavy ? 9 : 12) * Math.max(1, volumeScale));
     for (let i = 0; i < n; i++) {
       const glassy = b.type === "glass";
-      let m: Mesh;
+      let m: AbstractMesh;
+      let tpl: Mesh;
       let size: number;
       if (glassy) {
         // Real-glass look: irregular flat triangles (a disc with 3 sides),
-        // random proportions, double-sided translucent material.
+        // double-sided translucent material.
         size = 16 + Math.random() * 26;
-        m = MeshBuilder.CreateDisc("sh", { radius: size, tessellation: 3 }, scene);
-        m.material = glassShardMat;
-        m.scaling.x = 0.5 + Math.random();
-        m.scaling.y = 0.5 + Math.random();
+        tpl = shardDisc;
+        m = takeShard(tpl);
+        m.scaling.set(size * (0.5 + Math.random()), size * (0.5 + Math.random()), size);
         m.rotation.set(Math.random() * 3.14, Math.random() * 3.14, Math.random() * 3.14);
       } else {
         size = 26 + Math.random() * 18;
-        m = MeshBuilder.CreateBox("sh", { size }, scene);
-        m.material = MATS[b.type];
+        tpl = SHARD_BOX[b.type]!;
+        m = takeShard(tpl);
+        m.scaling.setAll(size);
       }
-      m.parent = tower;
-      m.position = base.add(
-        new Vector3((Math.random() - 0.5) * b.hx * 1.6, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * b.hz * 1.6),
+      m.position.set(
+        base.x + (Math.random() - 0.5) * b.hx * 1.6,
+        base.y + (Math.random() - 0.5) * 80,
+        base.z + (Math.random() - 0.5) * b.hz * 1.6,
       );
       const maxLife = 1.4 + Math.random() * 0.8;
       shards.push({
         mesh: m,
+        tpl,
         vx: iv.x + (Math.random() - 0.5) * 800,
         vy: iv.y + 120 + Math.random() * 480,
         vz: iv.z + (Math.random() - 0.5) * 800,
@@ -448,19 +593,13 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
         size,
       });
     }
-    const ring = MeshBuilder.CreateDisc("ring", { radius: 70, tessellation: 32 }, scene);
-    const rmat = makeMaterial(`rm${b.id}-${performance.now()}`, [1, 0.9, 0.6], 1);
-    rmat.alpha = 0.55;
-    ring.material = rmat;
-    ring.rotation.x = Math.PI / 2;
-    ring.position = base;
-    ring.parent = tower;
-    rings.push({ mesh: ring, mat: rmat, life: 0.4 });
+    takeRing(70, 32, [1, 0.9, 0.6], 0.55, 0.4).mesh.position.copyFrom(base);
   }
 
   // Lightning between one detonation and the next it triggers, so a CHAIN
   // visibly propagates instead of just going off everywhere at once.
   const arcs: { mesh: LinesMesh; life: number }[] = [];
+  const arcFree: LinesMesh[] = [];
   let shakeMs = 0;
 
   function spawnArc(from: Vector3, to: Vector3): void {
@@ -481,10 +620,17 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       );
     }
     pts.push(to);
-    const line = MeshBuilder.CreateLines("arc", { points: pts }, scene);
-    line.color = new Color3(0.75, 0.92, 1);
-    line.parent = tower;
-    line.isPickable = false;
+    let line = arcFree.pop();
+    if (line) {
+      line = MeshBuilder.CreateLines("arc", { points: pts, instance: line });
+      line.setEnabled(true);
+    } else {
+      line = MeshBuilder.CreateLines("arc", { points: pts, updatable: true }, scene);
+      line.color = new Color3(0.75, 0.92, 1);
+      line.parent = tower;
+      line.isPickable = false;
+      line.alwaysSelectAsActiveMesh = true; // its bounds move with every reuse
+    }
     arcs.push({ mesh: line, life: CONFIG.arcLifeS });
   }
 
@@ -497,7 +643,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       const a = arcs[i];
       a.life -= dtS;
       if (a.life <= 0) {
-        a.mesh.dispose();
+        a.mesh.setEnabled(false);
+        arcFree.push(a.mesh);
         arcs.splice(i, 1);
         continue;
       }
@@ -507,7 +654,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       const s = shards[i];
       s.life -= dtS;
       if (s.life <= 0) {
-        s.mesh.dispose();
+        dropShard(s);
         shards.splice(i, 1);
         continue;
       }
@@ -518,19 +665,19 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       // No floor in the endless tower — debris tumbles into the abyss.
       s.mesh.rotation.x += s.rx * dtS;
       s.mesh.rotation.z += s.rz * dtS;
-      s.mesh.scaling.setAll(Math.min(1, (s.life / s.maxLife) * 4));
+      s.mesh.scaling.setAll(s.size * Math.min(1, (s.life / s.maxLife) * 4));
     }
     for (let i = rings.length - 1; i >= 0; i--) {
       const r = rings[i];
       r.life -= dtS;
       if (r.life <= 0) {
-        r.mesh.dispose();
-        r.mat.dispose();
+        r.mesh.setEnabled(false);
+        ringFree.push(r);
         rings.splice(i, 1);
         continue;
       }
       const t = 1 - r.life / 0.4;
-      r.mesh.scaling.setAll(0.4 + t * 2.6);
+      r.mesh.scaling.setAll(r.radius * (0.4 + t * 2.6));
       r.mat.alpha = 0.55 * (1 - t);
     }
   }
@@ -563,12 +710,14 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
   landDisc.parent = tower;
   landDisc.setEnabled(false);
 
+  const restY = (tier: number) => C.firstTierTopY + tier * C.tierSpacing + C.blockH;
+
   return {
     engine,
     scene,
     syncBall(b) {
       ballSimY = b.y;
-      ballMesh.position = toLocal(b.x, b.y, b.z);
+      ballMesh.position.set(b.x - C.shaftW / 2, -b.y, b.z - C.shaftD / 2);
 
       // Rolling, so the whole skin comes past instead of one frozen face.
       //
@@ -597,7 +746,7 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
         } else if (e.kind === "shake") {
           shakeMs = CONFIG.quakeShakeMs;
         } else if (e.kind === "break" && e.id !== undefined) {
-          blockMeshes.get(e.id)?.setEnabled(false);
+          for (const m of blockMeshes.get(e.id) ?? []) m.setEnabled(false);
           const info = blockInfo.get(e.id);
           if (info) spawnShards(info, e);
           ballPulse = 1;
@@ -606,19 +755,22 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
         } else if ((e.kind === "mine" || e.kind === "shield" || e.kind === "mineblast") && e.id !== undefined) {
           // Mine detonation: violent red burst; on a shield hit you survive it.
           const info = blockInfo.get(e.id);
-          blockMeshes.get(e.id)?.setEnabled(false);
+          for (const m of blockMeshes.get(e.id) ?? []) m.setEnabled(false);
           if (info) {
+            const at = toLocal(info.cx, info.cy, info.cz);
             for (let i = 0; i < 22; i++) {
               const size = 18 + Math.random() * 26;
-              const m = MeshBuilder.CreateBox("mine-sh", { size }, scene);
-              m.material = MATS.mine;
-              m.parent = tower;
-              m.position = toLocal(info.cx, info.cy, info.cz).add(
-                new Vector3((Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90),
+              const m = takeShard(SHARD_BOX.mine!);
+              m.scaling.setAll(size);
+              m.position.set(
+                at.x + (Math.random() - 0.5) * 90,
+                at.y + (Math.random() - 0.5) * 90,
+                at.z + (Math.random() - 0.5) * 90,
               );
               const maxLife = 1.2 + Math.random() * 0.9;
               shards.push({
                 mesh: m,
+                tpl: SHARD_BOX.mine!,
                 vx: (Math.random() - 0.5) * 1600,
                 vy: 200 + Math.random() * 900,
                 vz: (Math.random() - 0.5) * 1600,
@@ -630,14 +782,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
               });
             }
             for (let ri = 0; ri < 3; ri++) {
-              const ring = MeshBuilder.CreateDisc("mr", { radius: 60 + ri * 30, tessellation: 32 }, scene);
-              const rmat = makeMaterial(`mrm${e.id}-${ri}-${performance.now()}`, [1, 0.25, 0.15], 1);
-              rmat.alpha = 0.6;
-              ring.material = rmat;
-              ring.rotation.x = Math.PI / 2;
-              ring.position = toLocal(info.cx, info.cy - 10 - ri * 8, info.cz);
-              ring.parent = tower;
-              rings.push({ mesh: ring, mat: rmat, life: 0.5 + ri * 0.12 });
+              const ring = takeRing(60 + ri * 30, 32, [1, 0.25, 0.15], 0.6, 0.5 + ri * 0.12);
+              ring.mesh.position.set(at.x, at.y + 10 + ri * 8, at.z);
             }
           }
           ballPulse = 1;
@@ -646,20 +792,23 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
             // Death scene (owner): the BALL itself shatters before the
             // overlay fades in.
             ballMesh.computeWorldMatrix(true);
-            const bp = ballMesh.position.clone();
+            const bp = ballMesh.position;
             ballMesh.setEnabled(false);
             for (let i = 0; i < 64; i++) {
               // Small plain-colored debris, no skin texture (owner).
               const size = 7 + Math.random() * 13;
-              const m = MeshBuilder.CreateBox("ball-sh", { size }, scene);
-              m.material = deathMats[i % deathMats.length];
-              m.parent = tower;
-              m.position = bp.add(
-                new Vector3((Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70),
+              const tpl = deathBox[i % deathBox.length];
+              const m = takeShard(tpl);
+              m.scaling.setAll(size);
+              m.position.set(
+                bp.x + (Math.random() - 0.5) * 70,
+                bp.y + (Math.random() - 0.5) * 70,
+                bp.z + (Math.random() - 0.5) * 70,
               );
               const maxLife = 1.5 + Math.random() * 1.0;
               shards.push({
                 mesh: m,
+                tpl,
                 vx: (Math.random() - 0.5) * 2000,
                 vy: 300 + Math.random() * 1100,
                 vz: (Math.random() - 0.5) * 2000,
@@ -674,14 +823,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
         } else if (e.kind === "bumper" && e.id !== undefined) {
           const info = blockInfo.get(e.id);
           if (info) {
-            const ring = MeshBuilder.CreateDisc("ring", { radius: 70, tessellation: 32 }, scene);
-            const rmat = makeMaterial(`rb${e.id}-${performance.now()}`, [0.3, 1, 0.6], 1);
-            rmat.alpha = 0.6;
-            ring.material = rmat;
-            ring.rotation.x = Math.PI / 2;
-            ring.position = toLocal(info.cx, info.cy - info.hy - 4, info.cz);
-            ring.parent = tower;
-            rings.push({ mesh: ring, mat: rmat, life: 0.35 });
+            const ring = takeRing(70, 32, [0.3, 1, 0.6], 0.6, 0.35);
+            ring.mesh.position = toLocal(info.cx, info.cy - info.hy - 4, info.cz);
           }
           ballPulse = Math.max(ballPulse, 0.7);
         }
@@ -693,14 +836,19 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       return v;
     },
     setLayout(blocks) {
-      for (const [, mesh] of blockMeshes) mesh.dispose();
+      for (const [, parts] of blockMeshes) for (const m of parts) m.dispose();
       blockMeshes.clear();
       blockInfo.clear();
+      tierIds.clear();
+      lowestLiveTier = 0;
       for (const b of blocks) addBlockMesh(b);
+      synced = blocks.length;
       ballMesh.setEnabled(true); // the ball is reborn with the new tower
     },
     syncLayout(blocks) {
-      for (const b of blocks) if (!blockMeshes.has(b.id)) addBlockMesh(b);
+      // The sim only ever appends, so everything before `synced` is known.
+      for (let i = synced; i < blocks.length; i++) addBlockMesh(blocks[i]);
+      synced = blocks.length;
     },
     setSkin(id) {
       skinBase = SKINS[id] ?? SKINS.core;
@@ -718,33 +866,44 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       if (on === trailOn) return;
       trailOn = on;
       if (!on) {
-        trailRibbon?.dispose();
-        trailMat?.dispose();
-        trailRibbon = null;
-        trailMat = null;
+        trailRibbon?.setEnabled(false);
         trailHistory.length = 0;
-      } else {
+        return;
+      }
+      if (!trailMat) {
         trailMat = new StandardMaterial("mTrail", scene);
-        trailMat.emissiveColor = new Color3(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2]);
         trailMat.diffuseColor = new Color3(0, 0, 0);
         trailMat.specularColor = new Color3(0, 0, 0);
         trailMat.backFaceCulling = false;
         trailMat.disableLighting = true;
         trailMat.alpha = 0.999; // < 1 so the mesh renders in the alpha pass
       }
+      trailMat.emissiveColor.set(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2]);
+      if (!trailRibbon) {
+        trailRibbon = new Mesh("agility-ribbon", scene);
+        const indices: number[] = [];
+        for (let i = 1; i < TRAIL_SEGMENTS; i++) {
+          const b = (i - 1) * 2;
+          indices.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+        }
+        const vd = new VertexData();
+        vd.positions = trailPos;
+        vd.colors = trailCol;
+        vd.indices = indices;
+        vd.applyToMesh(trailRibbon, true);
+        trailRibbon.material = trailMat;
+        trailRibbon.parent = tower;
+        trailRibbon.hasVertexAlpha = true;
+        trailRibbon.isPickable = false;
+        trailRibbon.alwaysSelectAsActiveMesh = true; // its bounds change every frame
+      }
     },
     setShield(on) {
       shieldOn = on;
     },
     jumpFx(b) {
-      const ring = MeshBuilder.CreateDisc("jr", { radius: 55, tessellation: 28 }, scene);
-      const rmat = makeMaterial(`jm${performance.now()}`, [0.6, 0.95, 1], 1);
-      rmat.alpha = 0.5;
-      ring.material = rmat;
-      ring.rotation.x = Math.PI / 2;
-      ring.position = toLocal(b.x, b.y + 30, b.z);
-      ring.parent = tower;
-      rings.push({ mesh: ring, mat: rmat, life: 0.3 });
+      const ring = takeRing(55, 28, [0.6, 0.95, 1], 0.5, 0.3);
+      ring.mesh.position = toLocal(b.x, b.y + 30, b.z);
     },
     setAim(points, disc, wallHit = false) {
       if (!points || points.length < 2 || !C.laserOn) {
@@ -789,6 +948,12 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
     },
     frame(frameMs, tilt) {
       updateEffects(frameMs / 1000);
+      // Tiers the fall has left far behind are gone for good: above the
+      // camera whatever the aspect, and out of reach of any bounce.
+      while (ballSimY - restY(lowestLiveTier) > DROP_TIERS_ABOVE * C.tierSpacing) {
+        disposeTier(lowestLiveTier);
+        lowestLiveTier++;
+      }
       // BIOME palette by depth: sky, fog, walls and block tints crossfade
       // as the ball descends through the layers.
       const tierNow = Math.max(0, (ballSimY - C.firstTierTopY) / C.tierSpacing);
@@ -814,48 +979,48 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       ballPulse *= 0.9;
       const glowK = skinBase.emissive + ballPulse * 0.5;
       ballMat.emissiveColor.set(skinBase.rgb[0] * glowK, skinBase.rgb[1] * glowK, skinBase.rgb[2] * glowK);
-      // AGILITY ribbon: rebuilt each frame from the position history, with a
-      // linear alpha ramp (1 at the ball → 0 at the tip).
-      if (trailOn && trailMat) {
+      // AGILITY ribbon: refilled each frame from the position history, with a
+      // linear alpha ramp (1 at the ball → 0 at the tip). Slots past the
+      // history collapse onto its last point at zero alpha — no area, no pixel.
+      if (trailOn && trailRibbon) {
         trailHistory.unshift(ballMesh.position.clone());
         if (trailHistory.length > TRAIL_SEGMENTS) trailHistory.length = TRAIL_SEGMENTS;
-        trailRibbon?.dispose();
-        trailRibbon = null;
-        if (trailHistory.length > 3) {
+        const len = trailHistory.length;
+        if (len > 3) {
           const half = C.ballRadius * 0.8;
-          const positions: number[] = [];
-          const colors: number[] = [];
-          const indices: number[] = [];
-          for (let i = 0; i < trailHistory.length; i++) {
-            const p = trailHistory[i];
-            const prev = trailHistory[Math.max(0, i - 1)];
-            const next = trailHistory[Math.min(trailHistory.length - 1, i + 1)];
+          for (let i = 0; i < TRAIL_SEGMENTS; i++) {
+            const j = Math.min(i, len - 1);
+            const p = trailHistory[j];
+            const prev = trailHistory[Math.max(0, j - 1)];
+            const next = trailHistory[Math.min(len - 1, j + 1)];
             let dx = next.x - prev.x;
             let dz = next.z - prev.z;
-            const len = Math.sqrt(dx * dx + dz * dz) || 1;
-            dx /= len;
-            dz /= len;
-            const k = 1 - i / (trailHistory.length - 1); // 1 at ball → 0 at tip
+            const l = Math.sqrt(dx * dx + dz * dz) || 1;
+            dx /= l;
+            dz /= l;
+            const k = i < len ? 1 - i / (len - 1) : 0; // 1 at ball → 0 at tip
             const w = half * k;
-            positions.push(p.x - dz * w, p.y, p.z + dx * w);
-            positions.push(p.x + dz * w, p.y, p.z - dx * w);
+            const o = i * 6;
+            trailPos[o] = p.x - dz * w;
+            trailPos[o + 1] = p.y;
+            trailPos[o + 2] = p.z + dx * w;
+            trailPos[o + 3] = p.x + dz * w;
+            trailPos[o + 4] = p.y;
+            trailPos[o + 5] = p.z - dx * w;
             const a = k * k * 0.85; // smooth quadratic fade
-            for (let s = 0; s < 2; s++) colors.push(skinBase.rgb[0], skinBase.rgb[1], skinBase.rgb[2], a);
-            if (i > 0) {
-              const b = (i - 1) * 2;
-              indices.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+            const c = i * 8;
+            for (let s = 0; s < 2; s++) {
+              trailCol[c + s * 4] = skinBase.rgb[0];
+              trailCol[c + s * 4 + 1] = skinBase.rgb[1];
+              trailCol[c + s * 4 + 2] = skinBase.rgb[2];
+              trailCol[c + s * 4 + 3] = a;
             }
           }
-          trailRibbon = new Mesh("agility-ribbon", scene);
-          const vd = new VertexData();
-          vd.positions = positions;
-          vd.colors = colors;
-          vd.indices = indices;
-          vd.applyToMesh(trailRibbon);
-          trailRibbon.material = trailMat;
-          trailRibbon.parent = tower;
-          trailRibbon.hasVertexAlpha = true;
-          trailRibbon.isPickable = false;
+          trailRibbon.updateVerticesData(VertexBuffer.PositionKind, trailPos);
+          trailRibbon.updateVerticesData(VertexBuffer.ColorKind, trailCol);
+          trailRibbon.setEnabled(true);
+        } else {
+          trailRibbon.setEnabled(false);
         }
       }
 
@@ -869,6 +1034,8 @@ export function createRenderer(canvas: HTMLCanvasElement, layout: BlockDef[]): R
       const menace = 0.6 + 0.35 * Math.sin(performance.now() / 180);
       MATS.mine.emissiveColor.set(0.9 * menace, 0.08 * menace, 0.1 * menace);
       ballMesh.scaling.setAll(1 + ballPulse * 0.25);
+      // Templates ride along with the ball — see template().
+      for (const t of templates) t.position.copyFrom(ballMesh.position);
 
       ballMesh.computeWorldMatrix(true);
       const p = ballMesh.getAbsolutePosition();

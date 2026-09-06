@@ -911,32 +911,46 @@ export function createUI(h: UIHandlers): UI {
     paintRank();
   }
 
+  // The HUD is fed every frame. Writing a text node the browser already shows
+  // still dirties layout, so each chip is touched only when its text changes.
+  const hudTime = el("hud-time");
+  const hudScore = el("hud-score");
+  const hudDepth = el("hud-depth");
+  const hudShield = el("hud-shield");
+  const hudCombo = el("hud-combo");
+  const hudJump = el("hud-jump");
+  const setText = (node: HTMLElement, text: string): boolean => {
+    if (node.textContent === text) return false;
+    node.textContent = text;
+    return true;
+  };
+
   return {
     setHud(timeS, score, combo, depth, shields) {
-      el("hud-time").textContent = `${timeS.toFixed(1)}s`;
-      el("hud-score").textContent = String(score);
-      el("hud-depth").textContent = `◈ ${depth}`;
-      const sh = el("hud-shield");
-      sh.textContent = `⛨ ${shields}`;
-      sh.classList.toggle("hidden", shields <= 0);
-      const comboEl = el("hud-combo");
-      comboEl.textContent = `×${combo}`;
-      comboEl.classList.toggle("hot", combo >= 4);
+      setText(hudTime, `${timeS.toFixed(1)}s`);
+      setText(hudScore, String(score));
+      setText(hudDepth, `◈ ${depth}`);
+      setText(hudShield, `⛨ ${shields}`);
+      // Class toggles are not gated on the text: a toggle that changes nothing
+      // is free, and the initial markup already carries the first text.
+      hudShield.classList.toggle("hidden", shields <= 0);
+      setText(hudCombo, `×${combo}`);
+      hudCombo.classList.toggle("hot", combo >= 4);
       if (combo > lastCombo) {
-        comboEl.classList.remove("pop");
-        void comboEl.offsetWidth;
-        comboEl.classList.add("pop");
+        hudCombo.classList.remove("pop");
+        void hudCombo.offsetWidth;
+        hudCombo.classList.add("pop");
       }
       lastCombo = combo;
     },
     setJump(charges, maxCharges, cooldownS) {
-      const chip = el("hud-jump");
       const ready = charges > 0;
-      chip.textContent = ready ? (maxCharges > 1 ? `⤒ ${charges}` : "⤒") : `⤒ ${cooldownS.toFixed(1)}s`;
-      chip.classList.toggle("ready", ready);
+      setText(hudJump, ready ? (maxCharges > 1 ? `⤒ ${charges}` : "⤒") : `⤒ ${cooldownS.toFixed(1)}s`);
+      hudJump.classList.toggle("ready", ready);
     },
     setBoosterBar(inventory, armed, runOn) {
-      const key = JSON.stringify([inventory, armed, runOn]);
+      let key = "";
+      for (const id of BOOSTER_ORDER) key += `${inventory[id] ?? 0}${armed[id] ? "a" : ""}${runOn[id] ? "r" : ""},`;
       if (key === barKey) return;
       barKey = key;
       bar.innerHTML = "";
