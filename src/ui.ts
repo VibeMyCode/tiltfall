@@ -157,6 +157,9 @@ export interface ResultsModel {
     nextText: () => string;
     buy: () => boolean;
   };
+  // Why the last purchase did not go through, or null. Read only after a buy
+  // has come back false.
+  payError: () => string | null;
   skins: {
     current: () => string;
     select: (id: string) => void;
@@ -682,7 +685,14 @@ export function createUI(h: UIHandlers): UI {
     btn.disabled = true;
     btn.textContent = "…";
     void model.skins.buy(o.id).then((ok) => {
-      if (!ok) return openSheet(o); // put the price back and let them try again
+      if (!ok) {
+        // Put the price back AND say what went wrong: a button that resets
+        // itself in silence is indistinguishable from a button that is dead.
+        openSheet(o);
+        const why = model?.payError();
+        if (why) el("sheet-note").textContent = why;
+        return;
+      }
       closeSheet();
       renderStore();
       renderPanels();
@@ -696,7 +706,11 @@ export function createUI(h: UIHandlers): UI {
     btn.disabled = true;
     void model.skins.gift(o.id).then((ok) => {
       btn.disabled = false;
-      if (!ok) return;
+      if (!ok) {
+        const why = model?.payError();
+        if (why) el("sheet-note").textContent = why;
+        return;
+      }
       // Silent success reads as a failure, and the share sheet may have been
       // dismissed — so say where the gift went.
       el("sheet-note").textContent = "Bought. Pick the friend in Telegram — or send it later from GIFTS TO SEND below the store.";

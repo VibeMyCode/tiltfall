@@ -83,21 +83,38 @@ export function shareGift(link: string, what: string): void {
 // Opens a Stars invoice and resolves once Telegram says what happened. Only
 // "paid" is a yes; "pending" is not, because a purchase that has not completed
 // must not hand anything over.
-export function payWithStars(link: string): Promise<boolean> {
+/**
+ * Opens Telegram's payment sheet. Resolves with what actually happened rather
+ * than a bare boolean: "cancelled" is the player changing their mind and needs
+ * no apology, while "unsupported" and "silent" are faults the player has to be
+ * told about — reporting them the same way is how a broken purchase looked
+ * exactly like a working one nobody wanted.
+ */
+export type PayOutcome = "paid" | "cancelled" | "failed" | "pending" | "unsupported" | "silent";
+
+export function payWithStars(link: string): Promise<PayOutcome> {
   const app = tg();
-  if (!app?.openInvoice) return Promise.resolve(false);
+  if (!app?.openInvoice) return Promise.resolve<PayOutcome>("unsupported");
   return new Promise((resolve) => {
     let done = false;
-    const finish = (ok: boolean) => {
+    const finish = (o: PayOutcome) => {
       if (!done) {
         done = true;
-        resolve(ok);
+        resolve(o);
       }
     };
     // A closed WebView or a client that never calls back must not leave the
     // player staring at a dead button.
-    setTimeout(() => finish(false), 120_000);
-    attempt(() => app.openInvoice!(link, (status) => finish(status === "paid")));
+    setTimeout(() => finish("silent"), 120_000);
+    // openInvoice throws on clients too old for it, and attempt() swallows the
+    // throw — so the throw has to be turned into an outcome here, or the
+    // promise would hang until that timeout.
+    let opened = false;
+    attempt(() => {
+      app.openInvoice!(link, (status) => finish(status));
+      opened = true;
+    });
+    if (!opened) finish("unsupported");
   });
 }
 

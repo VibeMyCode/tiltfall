@@ -21,7 +21,7 @@ import { attachInput, isTouch } from "./input.js";
 import { createRenderer } from "./render.js";
 import { createUI, type ResultsModel } from "./ui.js";
 import { createRecorder, type RunProof, type RunRecorder } from "./replay.js";
-import { buy, claimGift, fetchEntitlements, reviveStars, starsAvailable, type Gift } from "./pay.js";
+import { buy, claimGift, fetchEntitlements, payError, reviveStars, starsAvailable, type Gift } from "./pay.js";
 import { PRODUCTS, reviveProduct, skinProduct } from "./products.js";
 import { SHOP_SKINS, SKINS, skinStars } from "./skins.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
@@ -447,6 +447,7 @@ const resultsModel = (): ResultsModel => ({
       telegram: inTelegram() ? () => shareTelegram(sim.score, sim.depth, CONFIG.botUrl) : null,
       x: () => shareX(sim.score, sim.depth, CONFIG.botUrl),
     },
+    payError,
     shop: {
       get bank() {
         return bank;

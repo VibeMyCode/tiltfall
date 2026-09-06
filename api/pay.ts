@@ -100,7 +100,14 @@ export async function POST(request: Request): Promise<Response> {
     }),
   }).catch(() => null);
 
-  const out = (await r?.json().catch(() => null)) as { ok?: boolean; result?: string } | null;
-  if (!out?.ok || !out.result) return json({ error: "invoice failed" }, 502);
+  // Telegram's own reason travels back to the client. "invoice failed" alone
+  // told us nothing, and a purchase that fails is exactly the moment when
+  // guessing costs the most.
+  const out = (await r?.json().catch(() => null)) as
+    | { ok?: boolean; result?: string; description?: string }
+    | null;
+  if (!out?.ok || !out.result) {
+    return json({ error: `invoice failed${out?.description ? ` — ${out.description}` : ""}` }, 502);
+  }
   return json({ link: out.result, stars: product.stars, product: product.id, gift });
 }

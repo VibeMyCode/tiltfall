@@ -5,6 +5,7 @@ import { PRODUCTS, reviveProduct, revivePrice } from "../src/products.js";
 import { parsePayload } from "../api/telegram.js";
 import { encodePayload } from "../api/pay.js";
 import { giftCode } from "../api/_store.js";
+import { describeOutcome } from "../src/pay.js";
 
 describe("catalogue", () => {
   it("prices everything, and never at zero", () => {
@@ -77,5 +78,17 @@ describe("gifts", () => {
     expect(giftCode("stars_abc")).toBe(giftCode("stars_abc"));
     expect(giftCode("stars_abc")).not.toBe(giftCode("stars_abd"));
     expect(giftCode("stars_abc")).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe("payment failures", () => {
+  it("apologises only for faults, never for a player changing their mind", () => {
+    // A cancelled purchase used to be reported exactly like a broken one, and a
+    // broken one exactly like nothing at all.
+    expect(describeOutcome("paid")).toBeNull();
+    expect(describeOutcome("cancelled")).toBeNull();
+    for (const bad of ["failed", "pending", "unsupported", "silent"] as const) {
+      expect(describeOutcome(bad), bad).toBeTruthy();
+    }
   });
 });
