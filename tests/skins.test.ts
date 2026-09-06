@@ -41,6 +41,20 @@ describe("skin shop", () => {
     }
   });
 
+  it("only marks the pole-composed skins polar", () => {
+    // A polar preview puts the pole facing the viewer, where every texture
+    // column converges — right for the eyes, whose bands ARE latitude rings,
+    // and the worst possible view of anything painted flat.
+    const polar = Object.entries(SKINS).filter(([, d]) => d.polar);
+    expect(polar.map(([id]) => id).sort()).toEqual([
+      "legend_byakugan",
+      "legend_rinnegan",
+      "legend_sage",
+      "legend_sharingan_4",
+    ]);
+    for (const [id, def] of polar) expect(Boolean(def.image), `${id} is painted`).toBe(false);
+  });
+
   it("ships the file every painted skin names", () => {
     for (const id of SHOP_SKINS) {
       const img = SKINS[id].image;

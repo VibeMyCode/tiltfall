@@ -13,6 +13,10 @@ export interface SkinDef {
   pattern?: (ctx: CanvasRenderingContext2D, s: number) => void;
   image?: string;
   rarity?: Rarity; // absent on the procedural skins, which levels hand out
+  // Composed AROUND THE POLE rather than across the sheet — the eyes, whose
+  // bands are latitude rings. Those want the pole facing the viewer; every
+  // other texture wants the equator, where it is least deformed.
+  polar?: boolean;
 }
 
 // Price is a property of the RARITY, not of the skin. Twenty rows each
@@ -189,6 +193,7 @@ const SHOP: Record<string, SkinDef> = {
   // a generator asked for one keeps producing a tiling stripe pattern, which
   // wraps into a dartboard.
   legend_sharingan_4: {
+    polar: true,
     name: "SHARINGAN",
     rgb: [1, 1, 1],
     emissive: 0.15,
@@ -220,6 +225,7 @@ const SHOP: Record<string, SkinDef> = {
     },
   },
   legend_rinnegan: {
+    polar: true,
     name: "RINNEGAN",
     rgb: [1, 1, 1],
     emissive: 0.15,
@@ -236,6 +242,7 @@ const SHOP: Record<string, SkinDef> = {
     },
   },
   legend_byakugan: {
+    polar: true,
     name: "BYAKUGAN",
     rgb: [1, 1, 1],
     emissive: 0.15,
@@ -259,6 +266,7 @@ const SHOP: Record<string, SkinDef> = {
     },
   },
   legend_sage: {
+    polar: true,
     name: "SAGE",
     rgb: [1, 1, 1],
     emissive: 0.15,

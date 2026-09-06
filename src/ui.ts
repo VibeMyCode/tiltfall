@@ -42,12 +42,11 @@ const CHEVRON =
 const PREVIEW = 96;
 const PREVIEW_BIG = 256; // the sheet shows one ball large, so it gets a real one
 
-function projectBall(src: CanvasImageSource, size: number): HTMLCanvasElement {
-  const PREVIEW = size;
+function projectBall(src: CanvasImageSource, size: number, polar: boolean): HTMLCanvasElement {
   const TEX = size; // sampling at the output size: no cheaper, and no softer
   const out = document.createElement("canvas");
-  out.width = PREVIEW;
-  out.height = PREVIEW;
+  out.width = size;
+  out.height = size;
   const octx = out.getContext("2d");
   const tmp = document.createElement("canvas");
   tmp.width = TEX;
@@ -56,23 +55,42 @@ function projectBall(src: CanvasImageSource, size: number): HTMLCanvasElement {
   if (!octx || !tctx) return out;
   tctx.drawImage(src, 0, 0, TEX, TEX);
   const tex = tctx.getImageData(0, 0, TEX, TEX).data;
-  const img = octx.createImageData(PREVIEW, PREVIEW);
-  const R = PREVIEW / 2;
-  for (let y = 0; y < PREVIEW; y++) {
-    for (let x = 0; x < PREVIEW; x++) {
+  const img = octx.createImageData(size, size);
+  const R = size / 2;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
       const dx = (x - R + 0.5) / R;
       const dy = (y - R + 0.5) / R;
       const r = Math.hypot(dx, dy);
       if (r > 1) continue; // outside the ball stays transparent
-      const sx = Math.min(TEX - 1, (((Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1) * TEX) | 0);
-      const sy = Math.min(TEX - 1, ((1 - Math.asin(r) / Math.PI) * TEX) | 0);
+      const w = Math.sqrt(1 - r * r); // toward the viewer
+      // t is the texture row, u the column. The bottom of the sheet is the pole
+      // (Babylon's sphere runs V bottom-up), which is why t counts back from 1.
+      let t: number;
+      let u: number;
+      if (polar) {
+        // Pole facing the viewer: every column meets at the centre.
+        t = 1 - Math.asin(r) / Math.PI;
+        u = (Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1;
+      } else {
+        // Equator facing the viewer. A pole-on view puts the ONE point where
+        // all the columns converge dead centre, so the worst deformation in the
+        // whole mapping lands where the eye goes first. Here the centre sits at
+        // sin(theta) = 1, the widest and least squeezed latitude there is, and
+        // the visible half spans u 0.25..0.75 — which also hides the seam
+        // behind the silhouette instead of running it out of the middle.
+        t = 1 - Math.acos(Math.max(-1, Math.min(1, -dy))) / Math.PI;
+        u = Math.atan2(dx, w) / (2 * Math.PI) + 0.5;
+      }
+      const sx = Math.min(TEX - 1, (u * TEX) | 0);
+      const sy = Math.min(TEX - 1, (t * TEX) | 0);
       // Brightness falls off toward the rim, or a sphere reads as a sticker.
-      const k = 0.55 + 0.45 * Math.sqrt(1 - r * r);
-      const o = (y * PREVIEW + x) * 4;
-      const t = (sy * TEX + sx) * 4;
-      img.data[o] = tex[t] * k;
-      img.data[o + 1] = tex[t + 1] * k;
-      img.data[o + 2] = tex[t + 2] * k;
+      const k = 0.55 + 0.45 * w;
+      const o = (y * size + x) * 4;
+      const p = (sy * TEX + sx) * 4;
+      img.data[o] = tex[p] * k;
+      img.data[o + 1] = tex[p + 1] * k;
+      img.data[o + 2] = tex[p + 2] * k;
       img.data[o + 3] = 255;
     }
   }
@@ -85,6 +103,7 @@ function projectBall(src: CanvasImageSource, size: number): HTMLCanvasElement {
 // swatch is a host element the projection drops into once the file has decoded.
 function skinSwatch(id: string, big = false): HTMLElement {
   const size = big ? PREVIEW_BIG : PREVIEW;
+  const polar = SKINS[id]?.polar === true;
   const host = document.createElement("span");
   host.className = "swatch";
   // The grid uses the 128px thumbnails; the sheet, which shows one ball at
@@ -96,14 +115,14 @@ function skinSwatch(id: string, big = false): HTMLElement {
     cv.height = size;
     const ctx = cv.getContext("2d");
     if (ctx) drawSkin(ctx, id, size);
-    host.appendChild(projectBall(cv, size));
+    host.appendChild(projectBall(cv, size, polar));
     return host;
   }
   const img = new Image();
   img.src = url;
   void img
     .decode()
-    .then(() => host.appendChild(projectBall(img, size)))
+    .then(() => host.appendChild(projectBall(img, size, polar)))
     .catch(() => {});
   return host;
 }
