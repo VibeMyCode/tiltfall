@@ -295,10 +295,12 @@ export const skinStars = (id: string): number | null => {
   return r ? RARITY_STARS[r] : null;
 };
 
+const base = import.meta.env.BASE_URL; // "." on itch (subpath), "/" on a domain root
+
 export const skinImage = (id: string): string | null =>
-  SKINS[id]?.image ? `/skins/${SKINS[id].image}.jpg` : null;
+  SKINS[id]?.image ? `${base}skins/${SKINS[id].image}.jpg` : null;
 export const skinThumb = (id: string): string | null =>
-  SKINS[id]?.image ? `/skins/t/${SKINS[id].image}.jpg` : null;
+  SKINS[id]?.image ? `${base}skins/t/${SKINS[id].image}.jpg` : null;
 
 export function drawSkin(ctx: CanvasRenderingContext2D, id: string, size: number): void {
   const def = SKINS[id] ?? SKINS.core;
