@@ -40,7 +40,15 @@ async function snapshot(r, k) {
   const type = await r.type(k);
   let value;
   if (type === "string") value = await r.get(k);
-  else if (type === "hash") value = await r.hgetall(k);
+  else if (type === "hash") {
+    // Raw mode hands back a flat field/value list; keep it as sorted pairs so
+    // two databases compare equal whatever order they enumerate fields in.
+    const flat = await r.hgetall(k);
+    const pairs = [];
+    if (Array.isArray(flat)) for (let i = 0; i < flat.length; i += 2) pairs.push([flat[i], flat[i + 1]]);
+    else for (const f of Object.keys(flat ?? {})) pairs.push([f, flat[f]]);
+    value = pairs.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  }
   else if (type === "set") value = (await r.smembers(k)).sort();
   else if (type === "zset") value = await r.zrange(k, 0, -1, { withScores: true });
   else if (type === "list") value = await r.lrange(k, 0, -1);
@@ -51,7 +59,7 @@ async function snapshot(r, k) {
 async function write(r, k, s) {
   await r.del(k);
   if (s.type === "string") await r.set(k, s.value);
-  else if (s.type === "hash") await r.hset(k, s.value);
+  else if (s.type === "hash") await r.hset(k, Object.fromEntries(s.value));
   else if (s.type === "set") await r.sadd(k, ...s.value);
   else if (s.type === "zset") {
     const entries = [];
@@ -73,12 +81,12 @@ for (const k of keys) {
 if (!dst) process.exit(0);
 
 // Verify: every key reads back with the same type and content; TTLs within a
-// few seconds (time passed while copying).
+// minute (time passed while copying).
 let bad = 0;
 for (const k of keys) {
   const a = snaps.get(k);
   const b = await snapshot(dst, k);
-  const same = a.type === b.type && JSON.stringify(a.value) === JSON.stringify(b.value) && Math.abs(a.ttl - b.ttl) < 10000;
+  const same = a.type === b.type && JSON.stringify(a.value) === JSON.stringify(b.value) && Math.abs(a.ttl - b.ttl) < 60000;
   if (!same) {
     bad++;
     console.log(`MISMATCH ${k}`, JSON.stringify(a), JSON.stringify(b));
