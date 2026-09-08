@@ -140,6 +140,11 @@ export const CONFIG = {
   // Telegram: direct Mini App link used by the share button — opens the game
   // itself, not the bot chat (which would cost the recipient an extra tap).
   botUrl: "https://t.me/tiltfall_bot/play",
+  // Referral: coins to BOTH sides when an invited friend finishes a first run
+  // (the friend's half lands at once, on the open). One L2 level or two
+  // boosters — worth sending, not worth farming. Never Stars: those are the
+  // monetisation, coins are the game.
+  refReward: 2000,
 
   // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
   // Goals are multi-run by design (owner: 1-3 runs cleared everything).

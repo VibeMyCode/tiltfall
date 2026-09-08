@@ -90,16 +90,21 @@ export const initDataRaw = (): string | null => tg()?.initData || null;
  */
 export const startParam = (): string | null => tg()?.initDataUnsafe?.start_param || null;
 
-// Hands a gift link to the Telegram share sheet, so the buyer picks the friend
-// in Telegram's own chat list rather than copying a URL around.
-export function shareGift(link: string, what: string): void {
+// Hands a link to the Telegram share sheet, so the player picks the friend in
+// Telegram's own chat list rather than copying a URL around.
+export function shareLink(link: string, text: string): void {
   const app = tg();
-  const url =
-    `https://t.me/share/url?url=${encodeURIComponent(link)}` +
-    `&text=${encodeURIComponent(`A ${what} for you in TILTFALL. Tap to claim it.`)}`;
+  const url = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
   if (app?.openTelegramLink) app.openTelegramLink(url);
   else window.open(url, "_blank");
 }
+
+export const shareGift = (link: string, what: string): void =>
+  shareLink(link, `A ${what} for you in TILTFALL. Tap to claim it.`);
+
+// The Telegram user id, for building this player's own invite link. Unsigned
+// and untrusted, like startParam: the server only ever honours a signed one.
+export const playerId = (): number | null => tg()?.initDataUnsafe?.user?.id ?? null;
 
 // Opens a Stars invoice and resolves once Telegram says what happened. Only
 // "paid" is a yes; "pending" is not, because a purchase that has not completed

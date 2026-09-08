@@ -156,3 +156,11 @@ give each one its path. Environment (set in Netlify, not in the repo):
 them at boot. The bot's webhook must point at `/api/telegram` on the live
 domain with the same secret (`setWebhook`), and BotFather's Mini App URL at
 the site root.
+
+Attribution: every open sends one beacon and the server bumps `stat:src:<tag>`.
+In Telegram the tag is the `startapp` payload (so an ad link is
+`t.me/tiltfall_bot/play?startapp=ads_x`) or `tg` for a bare open, and opens
+that went through the bot chat count as `bot`. On the web it is `?src=<tag>`
+(use it on every link you post: `https://tiltfall.netlify.app/?src=forum`),
+falling back to the referrer host, then `web`. Read the counters with
+`node scripts/stats.mjs` after sourcing `.env.local`.

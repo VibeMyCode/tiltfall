@@ -25,7 +25,7 @@ import { buy, claimGift, fetchEntitlements, payError, reviveStars, starsAvailabl
 import { PRODUCTS, reviveProduct, skinProduct } from "./products.js";
 import { SHOP_SKINS, SKINS, skinStars } from "./skins.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
-import { resetBoard, submitRun } from "./board.js";
+import { bootTelegram, resetBoard, sourceTag, submitRun, trackOpen } from "./board.js";
 import {
   cloudLoad,
   cloudSave,
@@ -34,8 +34,10 @@ import {
   initDataRaw,
   initTelegram,
   inTelegram,
+  playerId,
   playerName,
   shareGift,
+  shareLink,
   shareTelegram,
   shareX,
   startParam,
@@ -133,6 +135,16 @@ const simOpts = () => {
 };
 
 initTelegram(); // expands/locks the Telegram viewport; no-op in a browser
+// Attribution: which link brought this open. A same-origin referrer is a
+// reload, not a source, so it is dropped before the tag is chosen.
+trackOpen(
+  sourceTag(
+    startParam(),
+    location.search,
+    document.referrer.startsWith(location.origin) ? "" : document.referrer,
+    inTelegram(),
+  ),
+);
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 // Every run is a NEW random tower (owner: generative all the way). The seed
@@ -191,6 +203,27 @@ if (starsAvailable()) {
     });
   }
 }
+// Referrals. The boot call tells the server who invited us (once per account)
+// and brings back the coins invitees have earned since we last opened. Coins
+// are banked here, client-side, like every other coin in the game.
+let invited = 0;
+{
+  const raw = initDataRaw();
+  const start = startParam();
+  if (raw) {
+    void bootTelegram(raw, start?.startsWith("r_") ? start.slice(2) : undefined).then((r) => {
+      if (!r) return;
+      invited = r.invited;
+      const gain = r.welcome + r.paid;
+      if (gain <= 0) return;
+      bank += gain;
+      save("tf.bank", bank);
+      ui.showBiome(r.welcome ? `WELCOME BONUS · +${r.welcome}` : `FRIENDS JOINED · +${r.paid}`);
+      ui.showTitle(); // re-renders the account card with the new bank
+    });
+  }
+}
+const inviteLink = (): string => `${CONFIG.botUrl}?startapp=r_${playerId() ?? ""}`;
 const ownsSkin = (id: string): boolean => perksAt(level).skins.includes(id) || boughtSkins.has(id);
 
 let segments: { score: number; depth: number; blocks: number; proof: RunProof }[] = [];
@@ -354,7 +387,9 @@ const ui = createUI({
   onActivate: tryActivate,
   onJump: tryJump,
   best: () => best,
-  account: () => ({ name: playerName(), level, bank, skin }),
+  account: () => ({ name: playerName(), level, bank, skin, invited }),
+  onInvite: () =>
+    shareLink(inviteLink(), `Play TILTFALL with me — we both get ${CONFIG.refReward} coins when you finish a run.`),
   mute: { get: () => isMuted(), toggle: () => toggleMute() },
   onHome: () => {
     // Back to the title screen: the loop freezes on `started`, so the tower

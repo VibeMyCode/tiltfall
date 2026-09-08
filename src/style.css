@@ -718,6 +718,12 @@ button.acc-cell:hover { border-color: #4d7ab8; }
   font-variant-numeric: tabular-nums;
 }
 .account .reset-link { margin: 12px auto 0; }
+.acc-tg { text-decoration: none; border-color: #2f7bd6; color: #7fc3ff; }
+.acc-tg:hover { border-color: #5aa0ff; color: #d8ecff; }
+.acc-why { margin-top: 6px; font-size: 11px; color: #6f7ea3; letter-spacing: 0.04em; }
+.title-legal { margin-top: 14px; font-size: 10px; letter-spacing: 0.1em; }
+.title-legal a { color: #4f5d7d; text-decoration: none; }
+.title-legal a:hover { color: #9fb4d8; }
 #title-play {
   margin-top: 28px;
   padding: 16px 54px;

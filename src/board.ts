@@ -97,3 +97,46 @@ export async function resetBoard(initData: string): Promise<void> {
     // offline, or outside Telegram — the local wipe still goes ahead
   }
 }
+
+// --- attribution ------------------------------------------------------------
+// Which link this open came from. In Telegram the deep-link payload wins
+// (startapp=ads1 -> "ads1"; r_/g_ carry ids, so they collapse to "r"/"g") and a
+// bare open is "tg". On the web ?src= wins, then the referrer host, else "web".
+// ponytail: counts opens, not people — PFADD the uid if uniques start to matter.
+export function sourceTag(startParam: string | null, search: string, referrer: string, telegram: boolean): string {
+  const clean = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/^www\./, "")
+      .replace(/[^a-z0-9_-]/g, "_")
+      .slice(0, 32);
+  if (telegram) return startParam ? clean(startParam.replace(/^([gr])_.*/, "$1")) : "tg";
+  const src = new URLSearchParams(search).get("src");
+  if (src) return clean(src);
+  try {
+    if (referrer) return clean(new URL(referrer).hostname);
+  } catch {
+    // malformed referrer — fall through to the bare tag
+  }
+  return "web";
+}
+
+export function trackOpen(tag: string): void {
+  void post({ hit: tag });
+}
+
+// --- referrals --------------------------------------------------------------
+// The Telegram boot call: names who invited this player (from startapp=r_<uid>,
+// honoured once per account) and collects what earlier invitees have earned.
+// Coins are client-side like every other coin, so the server only says how many.
+export interface BootResult {
+  welcome: number; // this open was a first visit via an invite link
+  paid: number; // invitees who finished a first run since the last boot
+  invited: number; // lifetime count, for the account card
+}
+
+export async function bootTelegram(initData: string, ref?: string): Promise<BootResult | null> {
+  const r = await post({ initData, boot: true, ref });
+  if (!r?.ok) return null;
+  return { welcome: Number(r.welcome ?? 0), paid: Number(r.paid ?? 0), invited: Number(r.invited ?? 0) };
+}

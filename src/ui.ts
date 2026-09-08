@@ -219,12 +219,13 @@ export interface UIHandlers {
   onJump: () => void;
   onStart: () => void; // title screen → first run (also unlocks audio)
   onShop: () => void; // title screen → the shop, before any run
+  onInvite: () => void; // title screen → Telegram share sheet with the referral link
   onHome: () => void; // leave the results card and go back to the title screen
   mute: { get: () => boolean; toggle: () => boolean };
   best: () => { score: number; depth: number };
   // Who you are and what you have carried in — read once when the title screen
   // is built, which is the only time it is shown.
-  account: () => { name: string | null; level: number; bank: number; skin: string };
+  account: () => { name: string | null; level: number; bank: number; skin: string; invited: number };
   onStore: () => void;
 }
 
@@ -296,6 +297,7 @@ export function createUI(h: UIHandlers): UI {
       <button id="title-shop" class="title-board">${LEVEL_ICON}<span>BOOSTERS &amp; LEVEL</span></button>
       <button id="title-board" class="title-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
       <div class="title-hint" id="title-hint"></div>
+      <div class="title-legal"><a href="terms.html" target="_blank" rel="noopener">TERMS</a> · <a href="privacy.html" target="_blank" rel="noopener">PRIVACY</a></div>
     </div>`;
   document.body.appendChild(title);
   document.body.classList.add("titlescreen");
@@ -321,7 +323,16 @@ export function createUI(h: UIHandlers): UI {
       `<span class="acc-cell"><i>best</i><b>${b.score}</b></span>` +
       `<span class="acc-cell"><i>depth</i><b>${b.depth}</b></span>` +
       `</div>` +
+      // In Telegram the card grows the referral loop; on the web it is the one
+      // place that says why Telegram is worth it — there the board is read-only
+      // and progress lives in this browser alone.
+      (a.name
+        ? `<button class="title-board" id="acc-invite"><span>INVITE A FRIEND · +${CONFIG.refReward} EACH</span></button>` +
+          (a.invited ? `<div class="acc-why">${a.invited} friend${a.invited === 1 ? "" : "s"} joined</div>` : "")
+        : `<a class="title-board acc-tg" href="${CONFIG.botUrl}?startapp=webcta" target="_blank" rel="noopener"><span>PLAY IN TELEGRAM</span></a>` +
+          `<div class="acc-why">leaderboard · cloud save · invite bonuses</div>`) +
       `<button class="reset-link hidden" id="acc-reset">RESET PROGRESS</button>`;
+    acc.querySelector<HTMLButtonElement>("#acc-invite")?.addEventListener("click", () => h.onInvite());
     // The ball you are wearing, on the card you look at before every run —
     // otherwise a bought skin is invisible until the run starts.
     acc.querySelector<HTMLElement>("#acc-ball")!.appendChild(skinSwatch(a.skin));

@@ -14,6 +14,7 @@
 import { verifyInitData } from "./_initdata.js";
 import { db, entitlements, rateLimit, spendRevives } from "./_store.js";
 import { replayScore, type RunProof } from "../src/replay.js";
+import { CONFIG } from "../src/config.js";
 
 const BEST = "lb:best"; // ZSET uid -> best verified run
 const TOTAL = "lb:total"; // ZSET uid -> lifetime points
@@ -24,6 +25,12 @@ const TOP_N = 100;
 // before any of that work is done.
 const MAX_SEGMENTS = 12;
 const player = (uid: string) => `p:${uid}`;
+// HASH {by: who invited this uid, paid: "1" once the inviter has been credited}.
+// Both fields are written with HSETNX and never deleted — not even by RESET
+// PROGRESS — so one account is one welcome bonus and one payout, ever.
+const referral = (uid: string) => `ref:${uid}`;
+const refPending = (uid: string) => `ref:pending:${uid}`; // coins owed, drained on boot
+const refKids = (uid: string) => `ref:kids:${uid}`; // SET of invitees who played
 
 interface Row {
   uid: string;
@@ -91,6 +98,9 @@ export async function GET(): Promise<Response> {
 // --- writing ----------------------------------------------------------------
 
 interface SubmitBody {
+  hit?: string; // attribution beacon, see src/board.ts sourceTag
+  boot?: boolean; // Telegram boot: register an invite, collect referral coins
+  ref?: string; // inviter uid from startapp=r_<uid>
   initData?: string;
   score?: number;
   depth?: number;
@@ -135,11 +145,32 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: "bad json" }, { status: 400 });
   }
 
+  // Attribution: one INCR per open, keyed by the link it came from. Deliberately
+  // unauthenticated — web visitors have no initData — so it is a private
+  // counter for deciding where to spend promo effort, never a trusted number.
+  if (typeof body.hit === "string") {
+    if (/^[a-z0-9_-]{1,32}$/.test(body.hit)) await db().incr(`stat:src:${body.hit}`);
+    return json({ ok: true });
+  }
+
   const user = verifyInitData(body.initData ?? "");
   if (!user) return json({ error: "unverified" }, { status: 401 });
   const uid = String(user.id);
 
   if (!(await rateLimit().limit(uid)).success) return json({ error: "slow down" }, { status: 429 });
+
+  if (body.boot) {
+    // An invite counts only for a player with no profile yet: a veteran opening
+    // a friend's link is not a new player, and HSETNX makes even a real one
+    // count once. Self-invites are just ignored.
+    let welcome = 0;
+    const by = typeof body.ref === "string" && /^\d{1,20}$/.test(body.ref) ? body.ref : null;
+    if (by && by !== uid && !(await db().exists(player(uid)))) {
+      if (await db().hsetnx(referral(uid), "by", by)) welcome = CONFIG.refReward;
+    }
+    const [paid, invited] = await Promise.all([db().getdel<number>(refPending(uid)), db().scard(refKids(uid))]);
+    return json({ ok: true, welcome, paid: Number(paid ?? 0), invited: Number(invited ?? 0) });
+  }
 
   const claimed = num(body.score, 1e9);
   const best = Number((await db().zscore(BEST, uid)) ?? 0);
@@ -191,7 +222,17 @@ export async function POST(request: Request): Promise<Response> {
     pipe.zadd(BEST, { score: verified, member: uid });
     pipe.hset(player(uid), { depth: String(num(body.depth, 100000)) });
   }
-  await pipe.exec();
+  const res = (await pipe.exec()) as unknown[];
+
+  // First run ever (res[1] is the HINCRBY above): the inviter has earned their
+  // half. The paid flag is set once per account, so wiping progress and playing
+  // again does not pay them twice.
+  if (Number(res[1]) === 1) {
+    const by = await db().hget<string>(referral(uid), "by");
+    if (by && (await db().hsetnx(referral(uid), "paid", "1"))) {
+      await Promise.all([db().incrby(refPending(by), CONFIG.refReward), db().sadd(refKids(by), uid)]);
+    }
+  }
 
   const [rank, total] = await Promise.all([db().zrevrank(BEST, uid), db().zscore(TOTAL, uid)]);
   return json({

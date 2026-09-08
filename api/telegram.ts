@@ -5,7 +5,7 @@
 //  - Stars payments. Telegram will not complete a purchase unless the bot
 //    answers pre_checkout_query within ten seconds, and successful_payment is
 //    the only trustworthy word that money changed hands. Both arrive here.
-import { credit, revoke } from "./_store.js";
+import { credit, db, revoke } from "./_store.js";
 import { PRODUCTS } from "../src/products.js";
 
 const WEB_APP = "https://tiltfall.netlify.app/";
@@ -94,6 +94,16 @@ export async function POST(request: Request): Promise<Response> {
     return new Response("ok");
   }
 
+  // --- legal -----------------------------------------------------------------
+  // Telegram's bot terms want a privacy policy reachable from the chat.
+  if (msg?.chat?.id && /^\/(privacy|terms)(@\w+)?(\s|$)/.test(msg.text ?? "")) {
+    await api("sendMessage", {
+      chat_id: msg.chat.id,
+      text: `Privacy policy: ${WEB_APP}privacy.html\nTerms of use: ${WEB_APP}terms.html`,
+    });
+    return new Response("ok");
+  }
+
   // --- the way in ------------------------------------------------------------
   if (!msg?.chat?.id || !isLaunchCommand(msg.text ?? "")) return new Response("ok");
 
@@ -103,11 +113,16 @@ export async function POST(request: Request): Promise<Response> {
       ? { text: "▶  PLAY TILTFALL", web_app: { url: WEB_APP } }
       : { text: "▶  PLAY TILTFALL", url: MINI_APP };
 
-  await api("sendMessage", {
-    chat_id: msg.chat.id,
-    text: "Steer a falling ball down an endless tower. Smash blocks for combos, dodge the mines, ride boosters deeper through five shifting biomes.",
-    reply_markup: { inline_keyboard: [[button]] },
-  });
+  await Promise.all([
+    api("sendMessage", {
+      chat_id: msg.chat.id,
+      text: "Steer a falling ball down an endless tower. Smash blocks for combos, dodge the mines, ride boosters deeper through five shifting biomes.",
+      reply_markup: { inline_keyboard: [[button]] },
+    }),
+    // Attribution: opens that went through the bot chat rather than the direct
+    // t.me/tiltfall_bot/play link. Same stat:src:* family as the client beacon.
+    db().incr("stat:src:bot"),
+  ]);
 
   return new Response("ok");
 }
