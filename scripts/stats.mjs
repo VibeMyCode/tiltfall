@@ -1,5 +1,7 @@
 // Prints the attribution counters and headline numbers from the live Redis.
-//   set -a && . ./.env.local && set +a && node scripts/stats.mjs
+//   npm run stats
+// Nothing to configure: the npm script passes --env-file=.env.local, which
+// already holds UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.
 import { Redis } from "@upstash/redis";
 
 const r = Redis.fromEnv();

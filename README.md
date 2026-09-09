@@ -163,4 +163,4 @@ In Telegram the tag is the `startapp` payload (so an ad link is
 that went through the bot chat count as `bot`. On the web it is `?src=<tag>`
 (use it on every link you post: `https://tiltfall.netlify.app/?src=forum`),
 falling back to the referrer host, then `web`. Read the counters with
-`node scripts/stats.mjs` after sourcing `.env.local`.
+`npm run stats` (it loads `.env.local` itself).
