@@ -15,6 +15,7 @@ import { verifyInitData } from "./_initdata.js";
 import { db, entitlements, rateLimit, spendRevives } from "./_store.js";
 import { replayScore, type RunProof } from "../src/replay.js";
 import { CONFIG } from "../src/config.js";
+import { WEB_APP, botApi } from "./_bot.js";
 
 const BEST = "lb:best"; // ZSET uid -> best verified run
 const TOTAL = "lb:total"; // ZSET uid -> lifetime points
@@ -31,6 +32,9 @@ const player = (uid: string) => `p:${uid}`;
 const referral = (uid: string) => `ref:${uid}`;
 const refPending = (uid: string) => `ref:pending:${uid}`; // coins owed, drained on boot
 const refKids = (uid: string) => `ref:kids:${uid}`; // SET of invitees who played
+// SET of uids with a run on that UTC day, kept 60 days. With `first` on the
+// player hash this is enough for scripts/stats.mjs to print DAU and D1/D7.
+const dau = (d: Date) => `dau:${d.toISOString().slice(0, 10)}`;
 
 interface Row {
   uid: string;
@@ -101,6 +105,7 @@ interface SubmitBody {
   hit?: string; // attribution beacon, see src/board.ts sourceTag
   boot?: boolean; // Telegram boot: register an invite, collect referral coins
   ref?: string; // inviter uid from startapp=r_<uid>
+  share?: { score?: number; depth?: number }; // prepare a share card for WebApp.shareMessage
   initData?: string;
   score?: number;
   depth?: number;
@@ -158,6 +163,34 @@ export async function POST(request: Request): Promise<Response> {
   const uid = String(user.id);
 
   if (!(await rateLimit().limit(uid)).success) return json({ error: "slow down" }, { status: 429 });
+
+  if (body.share) {
+    // A prepared inline message: the card Telegram posts when the player picks
+    // a chat in WebApp.shareMessage. Its PLAY button carries the player's own
+    // invite link, so every shared result is also a referral. The score is the
+    // player's claim — it is a caption in their own chats, not the board.
+    const score = num(body.share.score, 1e9);
+    const depth = num(body.share.depth, 1e6);
+    const who = (user.first_name ?? user.username ?? "A player").slice(0, 32);
+    const prepared = await botApi<{ id: string }>("savePreparedInlineMessage", {
+      user_id: user.id,
+      result: {
+        type: "photo",
+        id: `run-${uid}-${Date.now()}`,
+        photo_url: `${WEB_APP}og.jpg`,
+        thumbnail_url: `${WEB_APP}og.jpg`,
+        photo_width: 1200,
+        photo_height: 630,
+        caption: `${who}: ${score} points, depth ${depth} in TILTFALL.\nBeat me — we both get ${CONFIG.refReward} coins when you finish a run.`,
+        reply_markup: { inline_keyboard: [[{ text: "▶  PLAY TILTFALL", url: `${CONFIG.botUrl}?startapp=r_${uid}` }]] },
+      },
+      allow_user_chats: true,
+      allow_bot_chats: false,
+      allow_group_chats: true,
+      allow_channel_chats: true,
+    });
+    return prepared?.id ? json({ ok: true, id: prepared.id }) : json({ error: "share unavailable" }, { status: 502 });
+  }
 
   if (body.boot) {
     // An invite counts only for a player with no profile yet: a veteran opening
@@ -222,6 +255,11 @@ export async function POST(request: Request): Promise<Response> {
     pipe.zadd(BEST, { score: verified, member: uid });
     pipe.hset(player(uid), { depth: String(num(body.depth, 100000)) });
   }
+  // Retention bookkeeping: when this player first ran, and who ran today.
+  const today = new Date();
+  pipe.hsetnx(player(uid), "first", String(today.getTime()));
+  pipe.sadd(dau(today), uid);
+  pipe.expire(dau(today), 60 * 86400);
   const res = (await pipe.exec()) as unknown[];
 
   // First run ever (res[1] is the HINCRBY above): the inviter has earned their

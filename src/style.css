@@ -724,6 +724,7 @@ button.acc-cell:hover { border-color: #4d7ab8; }
 .title-legal { margin-top: 14px; font-size: 10px; letter-spacing: 0.1em; }
 .title-legal a { color: #4f5d7d; text-decoration: none; }
 .title-legal a:hover { color: #9fb4d8; }
+.title-legal + .title-legal { margin-top: 6px; }
 #title-play {
   margin-top: 28px;
   padding: 16px 54px;

@@ -6,9 +6,9 @@
 //    answers pre_checkout_query within ten seconds, and successful_payment is
 //    the only trustworthy word that money changed hands. Both arrive here.
 import { credit, db, revoke } from "./_store.js";
+import { WEB_APP, botApi as api } from "./_bot.js";
 import { PRODUCTS } from "../src/products.js";
 
-const WEB_APP = "https://tiltfall.netlify.app/";
 const MINI_APP = "https://t.me/tiltfall_bot/play";
 
 // Matches /start and /play, with or without the @botname suffix Telegram adds
@@ -31,13 +31,6 @@ export function parsePayload(raw: unknown): Payload | null {
     return null;
   }
 }
-
-const api = (method: string, body: unknown): Promise<unknown> =>
-  fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  }).catch(() => null);
 
 export async function POST(request: Request): Promise<Response> {
   // Telegram echoes this header on every delivery. Without the check, anyone

@@ -297,6 +297,7 @@ export function createUI(h: UIHandlers): UI {
       <button id="title-shop" class="title-board">${LEVEL_ICON}<span>BOOSTERS &amp; LEVEL</span></button>
       <button id="title-board" class="title-board">${BOARD_ICON}<span>LEADERBOARD</span></button>
       <div class="title-hint" id="title-hint"></div>
+      <div class="title-legal"><a href="${CONFIG.links.news}" target="_blank" rel="noopener">TELEGRAM NEWS</a> · <a href="${CONFIG.links.x}" target="_blank" rel="noopener">X</a> · <a href="${CONFIG.links.youtube}" target="_blank" rel="noopener">YOUTUBE</a></div>
       <div class="title-legal"><a href="terms.html" target="_blank" rel="noopener">TERMS</a> · <a href="privacy.html" target="_blank" rel="noopener">PRIVACY</a></div>
     </div>`;
   document.body.appendChild(title);

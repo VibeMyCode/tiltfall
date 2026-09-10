@@ -125,6 +125,13 @@ export function trackOpen(tag: string): void {
   void post({ hit: tag });
 }
 
+// Asks the bot to prepare the share card (photo, caption, PLAY button with this
+// player's invite link) and returns its id for WebApp.shareMessage.
+export async function prepareShare(initData: string, score: number, depth: number): Promise<string | null> {
+  const r = await post({ initData, share: { score, depth } });
+  return r?.ok && typeof r.id === "string" ? r.id : null;
+}
+
 // --- referrals --------------------------------------------------------------
 // The Telegram boot call: names who invited this player (from startapp=r_<uid>,
 // honoured once per account) and collects what earlier invitees have earned.

@@ -25,8 +25,9 @@ import { buy, claimGift, fetchEntitlements, payError, reviveStars, starsAvailabl
 import { PRODUCTS, reviveProduct, skinProduct } from "./products.js";
 import { SHOP_SKINS, SKINS, skinStars } from "./skins.js";
 import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
-import { bootTelegram, resetBoard, sourceTag, submitRun, trackOpen } from "./board.js";
+import { bootTelegram, prepareShare, resetBoard, sourceTag, submitRun, trackOpen } from "./board.js";
 import {
+  canShareCard,
   cloudLoad,
   cloudSave,
   haptic,
@@ -36,6 +37,7 @@ import {
   inTelegram,
   playerId,
   playerName,
+  shareCard,
   shareGift,
   shareLink,
   shareTelegram,
@@ -224,6 +226,16 @@ let invited = 0;
   }
 }
 const inviteLink = (): string => `${CONFIG.botUrl}?startapp=r_${playerId() ?? ""}`;
+
+// SHARE to Telegram: a card with a PLAY button where the client can show one,
+// a plain link otherwise. Both carry the invite link, so a shared result is a
+// referral as well.
+async function shareRun(score: number, depth: number): Promise<void> {
+  const raw = initDataRaw();
+  const id = raw && canShareCard() ? await prepareShare(raw, score, depth) : null;
+  if (id) shareCard(id);
+  else shareTelegram(score, depth, inviteLink());
+}
 const ownsSkin = (id: string): boolean => perksAt(level).skins.includes(id) || boughtSkins.has(id);
 
 let segments: { score: number; depth: number; blocks: number; proof: RunProof }[] = [];
@@ -477,10 +489,11 @@ const resultsModel = (): ResultsModel => ({
     bestDepth: best.depth,
     newBest: lastNewBest,
     // Both destinations are offered; X works outside Telegram too, so SHARE is
-    // no longer Telegram-only.
+    // no longer Telegram-only. The whole run is shared, the same numbers the
+    // card above shows, and the link is this player's invite link.
     share: {
-      telegram: inTelegram() ? () => shareTelegram(sim.score, sim.depth, CONFIG.botUrl) : null,
-      x: () => shareX(sim.score, sim.depth, CONFIG.botUrl),
+      telegram: inTelegram() ? () => void shareRun(runTotal().score, runTotal().depth) : null,
+      x: () => shareX(runTotal().score, runTotal().depth, inviteLink()),
     },
     payError,
     shop: {

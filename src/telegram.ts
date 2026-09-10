@@ -21,6 +21,7 @@ interface TgWebApp {
   openLink?: (url: string, opts?: { try_instant_view?: boolean }) => void;
   openInvoice?: (url: string, cb: (status: "paid" | "cancelled" | "failed" | "pending") => void) => void;
   shareMessage?: (id: string, cb?: (ok: boolean) => void) => void;
+  isVersionAtLeast?: (v: string) => boolean;
   initDataUnsafe?: { user?: { id: number; first_name?: string; username?: string }; start_param?: string };
   HapticFeedback?: TgHaptic;
   CloudStorage?: TgCloud;
@@ -203,6 +204,15 @@ export function cloudLoad(key: string): Promise<string | null> {
 }
 
 const brag = (score: number, depth: number) => `TILTFALL: ${score} points, depth ${depth}.\nBeat me!`;
+
+// Bot API 8.0: a prepared inline message — a real card with a PLAY button —
+// posted through Telegram's own chat picker, from inside the Mini App. Older
+// clients have no shareMessage and get the share-link path instead.
+export const canShareCard = (): boolean => {
+  const app = tg();
+  return Boolean(app?.shareMessage && app.isVersionAtLeast?.("8.0"));
+};
+export const shareCard = (id: string): void => attempt(() => tg()?.shareMessage?.(id));
 
 // Share into a Telegram chat — the link is the Mini App, so a tap lands the
 // reader in the game rather than in a chat with the bot.

@@ -145,6 +145,12 @@ export const CONFIG = {
   // boosters — worth sending, not worth farming. Never Stars: those are the
   // monetisation, coins are the game.
   refReward: 2000,
+  // Where the game talks: linked from the title screen.
+  links: {
+    news: "https://t.me/tiltfall_news",
+    x: "https://x.com/Tiltafall",
+    youtube: "https://www.youtube.com/@VibeMyCode",
+  },
 
   // Daily tasks (same for everyone, seeded by UTC date; rewards go to BANK).
   // Goals are multi-run by design (owner: 1-3 runs cleared everything).
