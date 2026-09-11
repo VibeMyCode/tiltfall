@@ -9,3 +9,14 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# The Netlify subdomain never redirects on its own (only www <-> apex do), so
+# every old link — forum, Reddit, itch, YouTube — is sent to the real domain
+# here. Query strings survive, so ?src= attribution still lands. The bot
+# webhook and BotFather already point at tiltfall.com; Telegram would not
+# have followed this redirect.
+[[redirects]]
+  from = "https://tiltfall.netlify.app/*"
+  to = "https://tiltfall.com/:splat"
+  status = 301
+  force = true

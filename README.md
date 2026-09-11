@@ -146,7 +146,9 @@ was shorter than describing it.
 ## Deploying
 
 Netlify, from `master`: every push builds `dist` and publishes it, so a merge
-is a deploy. `netlify.toml` names the build and the functions directory;
+is a deploy. `netlify.toml` names the build and the functions directory and
+carries the 301 from `tiltfall.netlify.app` to `tiltfall.com` (Netlify does
+not redirect its own subdomain by itself);
 `public/_headers` carries the Telegram `frame-ancestors` CSP and the immutable
 cache for hashed assets. The API handlers stay in `api/` as plain
 Request → Response functions; `netlify/functions/*.mts` are the adapters that
