@@ -22,6 +22,6 @@ For anyone curious about the engine side:
 - **Runs on phones** (portrait and landscape), tablets and desktops, no install.
 
 Play it in Telegram (Mini App, leaderboard + skins): https://t.me/tiltfall_bot/play
-Browser build: https://tiltfall.netlify.app/
+Browser build: https://tiltfall.com/
 
 Screenshots below. I'd genuinely love FPS reports from real devices, especially mid-range Android — and any feedback or bug reports. Devlog and weekly challenges live at @tiltfall_news.

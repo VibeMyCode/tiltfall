@@ -29,7 +29,7 @@ shards. Five biomes crossfade the deeper you fall. Runs on phones — portrait
 or landscape — no install, ~free.
 
 **Post 5 (CTA):**
-Play the browser build: tiltfall.netlify.app
+Play the browser build: tiltfall.com
 Or in Telegram (leaderboard + skins): t.me/tiltfall_bot/play
 Free. Tell me your depth record. 🏔️ #screenshotsaturday #webgame
 

@@ -2,7 +2,7 @@
 // `result` or null: every caller treats Telegram being down as best-effort.
 //
 // The leading underscore keeps this from becoming an endpoint.
-export const WEB_APP = "https://tiltfall.netlify.app/";
+export const WEB_APP = "https://tiltfall.com/";
 
 export async function botApi<T = unknown>(method: string, body: unknown): Promise<T | null> {
   try {

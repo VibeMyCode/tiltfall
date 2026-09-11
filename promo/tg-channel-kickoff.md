@@ -14,7 +14,7 @@ An endless crystal tower, a falling ball, and you. Smash glass, chain bombs,
 bounce off bumpers, and survive the mines — every run is a brand-new tower.
 Free, no ads, no install:
 → t.me/tiltfall_bot/play
-Web build: tiltfall.netlify.app
+Web build: tiltfall.com
 Reply with your best depth — let's see who goes deepest. 🏔️
 
 **Post 2 — the hook (with og.png):**

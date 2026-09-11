@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://tiltfall.netlify.app/sitemap.xml
+Sitemap: https://tiltfall.com/sitemap.xml
