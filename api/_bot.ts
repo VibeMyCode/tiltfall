@@ -4,6 +4,12 @@
 // The leading underscore keeps this from becoming an endpoint.
 export const WEB_APP = "https://tiltfall.com/";
 
+// Why the last call failed. Returning a bare null lost the one sentence that
+// says WHICH of "bad token", "wrong URL" or "chat blocked" it was, and a bot
+// that answers nothing looks identical in all three cases.
+let lastError: string | null = null;
+export const botError = (): string | null => lastError;
+
 export async function botApi<T = unknown>(method: string, body: unknown): Promise<T | null> {
   try {
     const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
@@ -11,9 +17,14 @@ export async function botApi<T = unknown>(method: string, body: unknown): Promis
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    const j = (await r.json()) as { ok?: boolean; result?: T };
-    return j.ok ? (j.result ?? null) : null;
-  } catch {
+    const j = (await r.json()) as { ok?: boolean; result?: T; description?: string };
+    if (!j.ok) {
+      lastError = `${method}: ${j.description ?? `http ${r.status}`}`;
+      return null;
+    }
+    return j.result ?? null;
+  } catch (e) {
+    lastError = `${method}: ${String(e)}`;
     return null;
   }
 }

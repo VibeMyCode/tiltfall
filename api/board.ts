@@ -111,6 +111,7 @@ interface SubmitBody {
   depth?: number;
   level?: number;
   skin?: string;
+  env?: string; // client + CloudStorage health, for diagnosing silent sync failures
   proofs?: RunProof[];
 }
 
@@ -247,6 +248,7 @@ export async function POST(request: Request): Promise<Response> {
     level: String(num(body.level, 999)),
     skin: String(body.skin ?? "core").slice(0, 24),
     seen: String(Date.now()),
+    env: String(body.env ?? "").slice(0, 64),
   });
   pipe.hincrby(player(uid), "runs", 1);
   pipe.incr(RUNS);

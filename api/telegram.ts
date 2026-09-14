@@ -6,7 +6,7 @@
 //    answers pre_checkout_query within ten seconds, and successful_payment is
 //    the only trustworthy word that money changed hands. Both arrive here.
 import { credit, db, revoke } from "./_store.js";
-import { WEB_APP, botApi as api } from "./_bot.js";
+import { WEB_APP, botApi as api, botError } from "./_bot.js";
 import { PRODUCTS } from "../src/products.js";
 
 const MINI_APP = "https://t.me/tiltfall_bot/play";
@@ -106,16 +106,26 @@ export async function POST(request: Request): Promise<Response> {
       ? { text: "▶  PLAY TILTFALL", web_app: { url: WEB_APP } }
       : { text: "▶  PLAY TILTFALL", url: MINI_APP };
 
-  await Promise.all([
-    api("sendMessage", {
-      chat_id: msg.chat.id,
-      text: "Steer a falling ball down an endless tower. Smash blocks for combos, dodge the mines, ride boosters deeper through five shifting biomes.",
-      reply_markup: { inline_keyboard: [[button]] },
-    }),
-    // Attribution: opens that went through the bot chat rather than the direct
-    // t.me/tiltfall_bot/play link. Same stat:src:* family as the client beacon.
-    db().incr("stat:src:bot"),
-  ]);
+  // The reply goes out FIRST and alone. This shared a Promise.all with the
+  // counter below, so one Redis hiccup rejected the pair, threw the handler,
+  // and /start answered nothing at all — the counter took the bot down with it.
+  const sent = await api("sendMessage", {
+    chat_id: msg.chat.id,
+    text: "Steer a falling ball down an endless tower. Smash blocks for combos, dodge the mines, ride boosters deeper through five shifting biomes.",
+    reply_markup: { inline_keyboard: [[button]] },
+  });
+
+  // Bookkeeping, individually guarded so it can only ever be a no-op:
+  // attribution for opens through the bot chat, and Telegram's own reason when
+  // the reply did not go out, which is otherwise invisible from the outside.
+  await db()
+    .incr("stat:src:bot")
+    .catch(() => null);
+  if (!sent) {
+    await db()
+      .set("stat:boterr", `${new Date().toISOString()} ${botError() ?? "unknown"}`, { ex: 604800 })
+      .catch(() => null);
+  }
 
   return new Response("ok");
 }

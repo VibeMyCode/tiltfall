@@ -17,6 +17,17 @@ const vals = keys.length ? await r.mget(...keys) : [];
 console.log("opens by source");
 keys.forEach((k, i) => console.log(`  ${k.slice("stat:src:".length).padEnd(24)} ${vals[i]}`));
 console.log("players", await r.zcard("lb:total"), " runs", (await r.get("stat:runs")) ?? 0);
+const botErr = await r.get("stat:boterr");
+if (botErr) console.log("LAST BOT API FAILURE:", botErr);
+
+// Which client each player last ran on, and whether its CloudStorage answered.
+// "cloud:silent" is the one that matters: that device cannot sync and its
+// progress is stranded.
+console.log("\nplayers by client (last run)");
+for (const k of await r.keys("p:*")) {
+  const h = await r.hgetall(k);
+  if (h) console.log(`  ${k.padEnd(14)} level ${String(h.level).padEnd(3)} ${h.env || "(before env tracking)"}`);
+}
 
 // Last 14 days of DAU, oldest first.
 const days = [...Array(14)].map((_, i) => shift(day(Date.now()), -i)).reverse();

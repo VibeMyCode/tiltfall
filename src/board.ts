@@ -38,6 +38,7 @@ export interface RunReport {
   depth: number;
   level: number;
   skin: string;
+  env?: string; // client + CloudStorage health, see telegram.ts clientEnv
 }
 
 // Every call is best-effort: a leaderboard that is down must never be able to

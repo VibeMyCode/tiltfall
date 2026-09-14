@@ -145,6 +145,12 @@ export function payWithStars(link: string): Promise<PayOutcome> {
   });
 }
 
+// Which client this is and whether its CloudStorage answers, recorded with the
+// run. There is no console inside a Telegram client, so a device that silently
+// fails to sync cannot be identified any other way.
+export const clientEnv = (): string =>
+  `${tg()?.platform ?? "web"}/${tg()?.version ?? "?"} cloud:${cloudStatus()}`.slice(0, 64);
+
 export function playerName(): string | null {
   const u = tg()?.initDataUnsafe?.user;
   return u ? (u.first_name ?? u.username ?? null) : null;
@@ -172,8 +178,19 @@ export const cloudKey = (k: string): string => k.replace(/[^A-Za-z0-9_-]/g, "_")
 let cloudErr: string | null = null;
 export const cloudError = (): string | null => cloudErr;
 
+// Set once CloudStorage has ANSWERED a read — an absent key still counts, that
+// is a working store with nothing in it yet.
+//
+// Writing is gated on it, and that is the whole point: a client whose
+// CloudStorage never answers (some desktop builds) would otherwise read
+// nothing, conclude it holds the newest state, and push its fresh level-1
+// progress over the account's real one. The other device then adopts that and
+// the progress is gone. Silence must mean "do not touch", not "you are first".
+let cloudOk = false;
+export const cloudStatus = (): string => (cloudOk ? "ok" : (cloudErr ?? "silent"));
+
 export function cloudSave(key: string, value: string): void {
-  if (!inTelegram()) return; // the browser stub logs an error for every call
+  if (!inTelegram() || !cloudOk) return; // the browser stub logs an error for every call
   attempt(() =>
     tg()?.CloudStorage?.setItem(cloudKey(key), value, (err) => {
       if (err) cloudErr = `setItem ${cloudKey(key)}: ${String(err)}`;
@@ -195,9 +212,16 @@ export function cloudLoad(key: string): Promise<string | null> {
         resolve(v);
       }
     };
-    setTimeout(() => finish(null), 1500); // never block boot on the network
+    // Boot is not blocked on this (the caller runs detached), so the budget is
+    // about a cold desktop client waking its network, not about frame time.
+    const timer = setTimeout(() => {
+      cloudErr ??= `getItem ${cloudKey(key)}: no answer in 4s`;
+      finish(null);
+    }, 4000);
     cs.getItem(cloudKey(key), (err, v) => {
+      clearTimeout(timer);
       if (err) cloudErr = `getItem ${cloudKey(key)}: ${String(err)}`;
+      else cloudOk = true;
       finish(err ? null : (v ?? null));
     });
   });

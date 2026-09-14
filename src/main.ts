@@ -28,6 +28,7 @@ import { REV_KEY, SYNCED_KEYS, adoptIfNewer } from "./sync.js";
 import { bootTelegram, prepareShare, resetBoard, sourceTag, submitRun, trackOpen } from "./board.js";
 import {
   canShareCard,
+  clientEnv,
   cloudLoad,
   cloudSave,
   haptic,
@@ -432,7 +433,7 @@ function reportRun(): void {
   // Snapshotted because startSim may replace both while the request is out.
   const done = segments.slice();
   const live = recorder;
-  void submitRun({ initData, score: total.score, depth: total.depth, level, skin }, () => [
+  void submitRun({ initData, score: total.score, depth: total.depth, level, skin, env: clientEnv() }, () => [
     ...done.map((seg) => seg.proof),
     live.proof(),
   ]).then((r) => ui.setRank(r));
