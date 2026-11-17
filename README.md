@@ -166,3 +166,7 @@ that went through the bot chat count as `bot`. On the web it is `?src=<tag>`
 (use it on every link you post: `https://tiltfall.com/?src=forum`),
 falling back to the referrer host, then `web`. Read the counters with
 `npm run stats` (it loads `.env.local` itself).
+
+## License
+
+MIT - see [LICENSE](LICENSE).

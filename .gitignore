@@ -1,6 +1,7 @@
 .agents
 AGENTS.md
 .codex
+.claude
 babylon.md
 /node_modules
 /dist
